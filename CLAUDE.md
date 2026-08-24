@@ -143,10 +143,13 @@ Then animate:
 ../../.venv/bin/python ../../scripts/animate_mirror.py --mp4 mirror.mp4
 ```
 
-`animate_mirror.py` reads `diags/diag1` via `openpmd-viewer` and renders `|B|`
-isosurfaces plus proton trails in PyVista, camera down −y so the mirror axis is
-horizontal. `--gif`/`--mp4` render offscreen; no flag opens an interactive window.
-It draws 60 of the 1000 tracks by default (`--n-tracks`) — all 1000 is unreadable.
+`animate_mirror.py` reads `diags/diag1` via `openpmd-viewer` and renders **B field
+lines** plus particle trails in PyVista, camera down −y so the mirror axis is
+horizontal. Lines are seeded on concentric mid-plane rings and traced both ways, so
+each one runs the length of the machine and the throat convergence is visible;
+`--isosurfaces` switches back to `|B|` contours. `--gif`/`--mp4`/`--png` render
+offscreen; no flag opens an interactive window. It draws 60 tracks by default
+(`--n-tracks`) — all of them is unreadable.
 Tracks are matched by particle `id` and NaN-filled once a particle is absorbed, so
 boundary losses do not corrupt the trails.
 
@@ -170,7 +173,7 @@ transverse cells.
 
 `diag1` writes openPMD every step (501 files) with `Bx By Bz` on the grid plus the
 proton species. The grid `B` matches the FEMM file (max ~8.9 mT), so the animation's
-isosurfaces really are the mirror field.
+field lines really are the mirror field.
 
 Known dead line in the deck: `diag1.proton.variables` — the species is `protons`, so
 the key is ignored and defaults are written instead. Harmless (the defaults cover

@@ -110,9 +110,10 @@ Then render the result:
 ../../.venv/bin/python ../../scripts/animate_mirror.py --mp4 mirror.mp4
 ```
 
-Omit `--mp4` for an interactive PyVista window, or pass `--gif` instead. The animation
-shows `|B|` isosurfaces with proton trails, viewed side-on so the mirror axis runs
-horizontally.
+Omit `--mp4` for an interactive PyVista window, or pass `--gif`/`--png` instead. The
+animation shows magnetic field lines with particle trails, viewed side-on so the
+mirror axis runs horizontally. Pass `--isosurfaces` for `|B|` contours instead of
+field lines.
 
 Diagnostic output is gitignored — 501 openPMD files per run is more than is worth
 tracking. The input deck and the FEMM field file are committed, so runs reproduce.

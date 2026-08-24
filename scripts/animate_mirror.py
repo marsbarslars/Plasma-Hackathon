@@ -8,6 +8,9 @@ Run from the simulation directory (the one containing diags/).
     python animate_mirror.py --gif out.gif   # write an animated GIF
     python animate_mirror.py --mp4 out.mp4   # needs: uv pip install imageio-ffmpeg
 
+Magnetic field lines are drawn by default, seeded on a mid-plane ring and
+traced both ways; pass --isosurfaces for |B| contours instead.
+
 The mirror axis (z) is rendered horizontally.
 """
 
@@ -41,8 +44,13 @@ def parse_args():
                    help="trail length in frames; 0 for full history")
     p.add_argument("--zoom", type=float, default=1.0,
                    help=">1 moves the camera closer")
-    p.add_argument("--opacity", type=float, default=0.18,
-                   help="isosurface opacity")
+    p.add_argument("--opacity", type=float, default=0.55,
+                   help="opacity of the field rendering")
+    p.add_argument("--isosurfaces", action="store_true",
+                   help="draw |B| isosurfaces instead of field lines")
+    p.add_argument("--n-lines", type=int, default=48,
+                   help="approximate number of field lines")
+    p.add_argument("--line-width", type=float, default=1.6)
     return p.parse_args()
 
 
@@ -62,16 +70,19 @@ def resolve_species(ts, requested):
 # ------------------------------------------------------------------ B field
 
 def load_field(ts, iteration):
-    """Return a PyVista ImageData of |B| with axes ordered (x, y, z)."""
+    """PyVista ImageData carrying both |B| and the B vector, axes (x, y, z).
+
+    The vector is what field-line tracing needs; |B| colours it.
+    """
     comps = {}
     for c in ("x", "y", "z"):
         comps[c], info = ts.get_field(field="B", coord=c, iteration=iteration)
 
-    bmag = np.sqrt(comps["x"] ** 2 + comps["y"] ** 2 + comps["z"] ** 2)
-
     # openPMD stores array axes in file order, not necessarily (x, y, z).
     axes = [info.axes[i] for i in range(3)]
-    bmag = np.transpose(bmag, [axes.index(a) for a in ("x", "y", "z")])
+    order = [axes.index(a) for a in ("x", "y", "z")]
+    bx, by, bz = (np.transpose(comps[c], order) for c in ("x", "y", "z"))
+    bmag = np.sqrt(bx**2 + by**2 + bz**2)
 
     coords = {a: getattr(info, a) for a in ("x", "y", "z")}
     origin = tuple(coords[a][0] for a in ("x", "y", "z"))
@@ -81,8 +92,43 @@ def load_field(ts, iteration):
     )
 
     grid = pv.ImageData(dimensions=bmag.shape, origin=origin, spacing=spacing)
+    # ImageData point order is x-fastest, so every array is ravelled Fortran-wise.
     grid["Bmag"] = bmag.ravel(order="F")
+    grid["B"] = np.column_stack([c.ravel(order="F") for c in (bx, by, bz)])
     return grid
+
+
+def field_lines(grid, n_lines, seed_radius_frac=0.75):
+    """Trace B from a ring of seeds on the mid-plane, in both directions.
+
+    Seeding on a mid-plane ring rather than a volume is what makes a mirror
+    legible: every line runs the length of the machine and converges at the
+    throats, instead of a thicket of short segments.
+    """
+    xmin, xmax, ymin, ymax, zmin, zmax = grid.bounds
+    cx, cy, cz = (xmin + xmax) / 2, (ymin + ymax) / 2, (zmin + zmax) / 2
+    r = seed_radius_frac * min(xmax - xmin, ymax - ymin) / 2
+
+    # A few concentric rings, so the flux surfaces nest visibly.
+    pts = []
+    for frac in (0.25, 0.55, 1.0):
+        n = max(3, int(n_lines * frac / 1.8))
+        theta = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        pts.append(np.column_stack([
+            cx + frac * r * np.cos(theta),
+            cy + frac * r * np.sin(theta),
+            np.full(n, cz),
+        ]))
+    seeds = pv.PolyData(np.vstack(pts))
+
+    span = max(xmax - xmin, ymax - ymin, zmax - zmin)
+    return grid.streamlines_from_source(
+        seeds, vectors="B",
+        integration_direction="both",
+        max_length=6 * span,
+        initial_step_length=0.2,
+        terminal_speed=1e-12,
+    )
 
 
 # --------------------------------------------------------------- trajectories
@@ -163,11 +209,26 @@ def main():
     p = pv.Plotter(off_screen=off_screen, window_size=(1400, 700))
     p.set_background("black")
 
-    p.add_mesh(
-        grid.contour(isosurfaces=ISOSURFACES, scalars="Bmag"),
-        scalars="Bmag", cmap="cividis", opacity=args.opacity,
-        show_scalar_bar=False, name="field",
-    )
+    if args.isosurfaces:
+        p.add_mesh(
+            grid.contour(isosurfaces=ISOSURFACES, scalars="Bmag"),
+            scalars="Bmag", cmap="cividis", opacity=args.opacity,
+            show_scalar_bar=False, name="field",
+        )
+    else:
+        lines = field_lines(grid, args.n_lines)
+        if lines.n_points:
+            p.add_mesh(
+                lines, scalars="Bmag", cmap="cividis",
+                opacity=args.opacity, line_width=args.line_width,
+                show_scalar_bar=False, name="field",
+            )
+        else:
+            print("warning: no field lines traced; falling back to isosurfaces",
+                  file=__import__("sys").stderr)
+            p.add_mesh(grid.contour(isosurfaces=ISOSURFACES, scalars="Bmag"),
+                       scalars="Bmag", cmap="cividis", opacity=0.3,
+                       show_scalar_bar=False, name="field")
     p.add_mesh(pv.Box(grid.bounds), style="wireframe",
                color="gray", opacity=0.3, name="box")
 
