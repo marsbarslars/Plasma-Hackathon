@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Force a pywarpx rebuild from vendor/warpx.
+exec "$(dirname "${BASH_SOURCE[0]}")/warpx-sync" --reinstall-package pywarpx "$@"

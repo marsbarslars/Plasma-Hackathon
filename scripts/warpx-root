@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Print the WarpX project root.
+. "$(dirname "${BASH_SOURCE[0]}")/warpx-env.sh"
+warpx_root

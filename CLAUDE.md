@@ -4,19 +4,36 @@ WarpX experiments on macOS/arm64. Single-node, no MPI, OpenMP threading, 3D only
 
 Upstream docs: <https://warpx.readthedocs.io/en/latest/index.html>
 Vendored WarpX has its own agent notes at `vendor/warpx/CLAUDE.md` — those describe
-building WarpX standalone under conda and do **not** apply here. Use the fish
-functions below instead.
+building WarpX standalone under conda and do **not** apply here. Use the helpers below.
 
 ## Layout
 
 ```
 pyproject.toml           uv project (package = false); pywarpx sourced from vendor/warpx
 .venv/                   python 3.12
-vendor/warpx/            WarpX git checkout (gitignored — not a submodule, see Caveats)
+vendor/warpx/            WarpX submodule, tracking upstream `development`
 vendor/warpx/build/      standalone CMake/Ninja build → bin/warpx.3d
+scripts/warpx-*          bash helpers (see below)
 scripts/animate_mirror.py
 runs/<name>/             one directory per simulation, run from inside it
 ```
+
+## Getting the source
+
+`vendor/warpx` is a git submodule pinned to a specific upstream commit, so clone with:
+
+```bash
+git clone --recurse-submodules https://github.com/marsbarslars/Plasma-Hackathon.git
+```
+
+If you already cloned without it, or the directory is empty:
+
+```bash
+git submodule update --init --recursive
+```
+
+To move to newer upstream WarpX, `git submodule update --remote vendor/warpx`, then
+rebuild both targets and commit the changed submodule pointer.
 
 ## Environment
 
@@ -27,29 +44,42 @@ There are two independent WarpX builds. Neither rebuilds the other.
 | `pywarpx` (PICMI/Python) | `warpx-sync` / `warpx-rebuild` | `import pywarpx` in `.venv` |
 | `warpx.3d` (executable) | `warpx-build` | `warpx3d` |
 
-After updating `vendor/warpx`, run **both** `warpx-rebuild` and `warpx-build`.
+After changing the submodule pointer, run **both** `warpx-rebuild` and `warpx-build`.
 
-Fish functions live one-per-file in `~/.config/fish/functions/` and autoload; see
-`fish_ref.md` for the source.
+The helpers exist in two parallel forms, same names and same behaviour:
 
-- `warpx-root` — walks up for `vendor/warpx` + `pyproject.toml`, or honours `$WARPX_PROJECT`.
-  Everything else builds on it, so the functions work from any subdirectory.
-- `warpx-sync [uv args]` — `uv sync` with `WARPX_MPI=OFF`, `WARPX_COMPUTE=OMP`,
-  `WARPX_DIMS=3`, Homebrew `libomp` and prefix.
-- `warpx-rebuild` — `warpx-sync --reinstall-package pywarpx`; forces the extension rebuild.
-- `warpx-build [cmake args]` — CMake/Ninja into `vendor/warpx/build`, `-DWarpX_MPI=OFF
-  -DWarpX_COMPUTE=OMP -DWarpX_DIMS=3 -DWarpX_FFT=ON`.
-- `warpx3d [args]` — runs `vendor/warpx/build/bin/warpx.3d`.
+- **`scripts/warpx-*`** — bash, committed, the portable copy. Run as `./scripts/warpx-sync`,
+  or put `scripts/` on `$PATH`.
+- **fish functions** in `~/.config/fish/functions/`, autoloaded, sourced in `fish_ref.md`.
+  Not in the repo, so keep them in step with `scripts/` when either changes.
+
+| Command | Does |
+| --- | --- |
+| `warpx-root` | Prints the project root: `$WARPX_PROJECT`, else walks up for `vendor/warpx` + `pyproject.toml`. Everything else builds on it, so the helpers work from any subdirectory. |
+| `warpx-sync [uv args]` | `uv sync` with `WARPX_MPI=OFF`, `WARPX_COMPUTE=OMP`, `WARPX_DIMS=3`. |
+| `warpx-rebuild [uv args]` | `warpx-sync --reinstall-package pywarpx`; forces the extension rebuild. |
+| `warpx-build [cmake args]` | CMake/Ninja into `vendor/warpx/build`, `-DWarpX_MPI=OFF -DWarpX_COMPUTE=OMP -DWarpX_DIMS=3 -DWarpX_FFT=ON`. |
+| `warpx3d [args]` | Runs `vendor/warpx/build/bin/warpx.3d`. |
 
 Requires Homebrew `libomp`, `cmake`, `ninja`, and `uv`.
+
+`scripts/warpx-env.sh` holds the shared bash helpers and is sourced, not executed. It
+targets bash 3.2, the version macOS ships — so no associative arrays, no `${x^^}`, and
+no `set -u`, since bash 3.2 treats `"$@"` with zero arguments as an unset variable.
+It also degrades where the fish versions assume macOS: `nproc` when there is no
+`sysctl`, and a warning rather than a hard failure when there is no `brew`.
+
+One deliberate difference from `fish_ref.md`: `warpx-sync.fish` *overwrites*
+`CMAKE_PREFIX_PATH` with the Homebrew prefix while `warpx-build.fish` prepends to it.
+The bash helpers prepend in both cases, so an existing `CMAKE_PREFIX_PATH` survives.
 
 ## Running
 
 From inside the run directory, so diagnostics land in `./diags/`:
 
-```fish
+```bash
 cd runs/magnetic-mirror
-warpx3d inputs_3d_magnetic_mirror.txt
+../../scripts/warpx3d inputs_3d_magnetic_mirror.txt
 ```
 
 WarpX writes `warpx_used_inputs` next to the output — it lists every parameter the
@@ -58,7 +88,7 @@ to catch typo'd keys**, which WarpX ignores silently rather than erroring.
 
 Then animate:
 
-```fish
+```bash
 python ../../scripts/animate_mirror.py --mp4 mirror.mp4
 ```
 
@@ -97,7 +127,8 @@ everything the animation reads) but it is not doing what it looks like.
 
 ## Caveats
 
-- `vendor/` is gitignored, so a fresh clone has no WarpX and `uv sync` will fail.
-  Re-clone WarpX into `vendor/warpx` by hand, or convert it to a git submodule.
 - `runs/*/diags/` is gitignored — 501 openPMD files per run is far too much to track.
   Committed run artifacts are the input deck and the FEMM field file.
+- `vendor/warpx/build/` is ignored by WarpX's own `.gitignore`, so build output never
+  shows up as submodule dirt. A modified submodule pointer in `git status` means the
+  checkout actually moved.

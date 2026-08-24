@@ -1,0 +1,4 @@
+[submodule "vendor/warpx"]
+	path = vendor/warpx
+	url = https://github.com/BLAST-WarpX/warpx.git
+	branch = development
