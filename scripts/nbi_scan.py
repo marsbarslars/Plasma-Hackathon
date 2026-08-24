@@ -15,23 +15,16 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 import sys
 
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from plasma import load_field_map, load_particles, load_scraped  # noqa: E402
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-WARPX = os.path.join(HERE, "warpx")
+from plasma import (confined_fraction, crossing, load_field_map,  # noqa: E402
+                    load_particles, load_scraped, run_sweep, tag)
 
 # Denser near the expected loss-cone boundary, where the interesting change is.
 ANGLES = [0, 10, 20, 25, 30, 32.5, 35, 37.5, 40, 45, 50, 60, 75, 90]
-
-
-def tag(angle):
-    return f"a{angle:g}".replace(".", "p")
 
 
 def parse_args():
@@ -44,45 +37,12 @@ def parse_args():
     return p.parse_args()
 
 
-def run_sweep(inputs, angles, max_step):
-    for i, a in enumerate(angles, 1):
-        t = tag(a)
-        print(f"[{i}/{len(angles)}] alpha = {a} deg -> diags/{t}", flush=True)
-        cmd = [WARPX, "run", inputs,
-               f"alpha_deg={a}",
-               f"max_step={max_step}",
-               f"diag1.file_prefix=diags/{t}",
-               f"scraped.file_prefix=diags/{t}_scraped",
-               f"reduced_diags.path=./diags/{t}_reduced/"]
-        with open(f"diags_{t}.log", "w") as log:
-            r = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT)
-        if r.returncode != 0:
-            raise SystemExit(f"alpha={a} failed; see diags_{t}.log")
-
-
-def confined_fraction(reduced_dir):
-    path = os.path.join(reduced_dir, "confined.txt")
-    if not os.path.isfile(path):
-        return None, None
-    with open(path) as fh:
-        header = fh.readline().lstrip("#").split()
-    data = np.loadtxt(path, skiprows=1)
-    if data.ndim == 1:
-        data = data[None, :]
-    col = next((i for i, h in enumerate(header)
-                if "macroparticle" in h.lower() and "total" in h.lower()), None)
-    if col is None:
-        return None, None
-    n = data[:, col]
-    return data[:, 1] * 1e6, n / n[0]
-
-
 def analyse(angles):
     """Per angle: confined fraction, loss channels, and the theory prediction."""
     rows = []
     fmap = None
     for a in angles:
-        t = tag(a)
+        t = "a" + tag(a)
         d = f"diags/{t}"
         if not os.path.isdir(d):
             continue
@@ -150,7 +110,7 @@ def make_figure(rows, fmap, out):
             label="guiding centre, on-axis $B_{max}$")
     ax.plot(ang, final, "o-", color="#00224E", lw=1.8, ms=5, label="simulated")
 
-    cross = _crossing(ang, final, 0.5)
+    cross = crossing(ang, final, 0.5)
     if cross is not None:
         ax.annotate(f"50% at {cross:.1f}$^\\circ$", xy=(cross, 0.5),
                     xytext=(cross + 9, 0.42), fontsize=9, color="#00224E",
@@ -231,15 +191,6 @@ def make_figure(rows, fmap, out):
     print(f"wrote {out}")
 
 
-def _crossing(x, y, level):
-    """Linear interpolation of where y first rises through `level`."""
-    for i in range(len(x) - 1):
-        if y[i] < level <= y[i + 1]:
-            f = (level - y[i]) / (y[i + 1] - y[i])
-            return x[i] + f * (x[i + 1] - x[i])
-    return None
-
-
 def _nearest(rows, target):
     cand = [r for r in rows if os.path.isdir(r["path"])]
     return min(cand, key=lambda r: abs(r["angle"] - target)) if cand else None
@@ -250,7 +201,8 @@ def main():
     angles = args.angles if args.angles is not None else ANGLES
 
     if args.run:
-        run_sweep(args.inputs, angles, args.max_step)
+        run_sweep(args.inputs, "alpha_deg", angles, species_prefix="a",
+                  max_step=args.max_step, log_prefix="diags")
 
     if args.plot:
         rows, fmap = analyse(angles)
@@ -267,7 +219,7 @@ def main():
               f"{off:.2f} deg at the global B_max")
         ang = np.array([r["angle"] for r in rows])
         fin = np.array([r["final"] for r in rows])
-        c = _crossing(ang, fin, 0.5)
+        c = crossing(ang, fin, 0.5)
         if c is not None:
             print(f"simulated 50% crossing: {c:.2f} deg")
         make_figure(rows, fmap, args.plot)

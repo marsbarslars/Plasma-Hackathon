@@ -243,6 +243,23 @@ criterion assumes. See that directory's README.
 
 No vessel yet, so radial losses are the domain box, not a vacuum vessel.
 
+## runs/vessel-mirror
+
+Phase 1: an embedded-boundary vacuum vessel around the Phase 0 mirror, scanned over
+radius. EB works with `grid_type = collocated` and the labframe electrostatic
+solver. `boundary.particle_eb = Absorbing`, and `ions.save_particles_at_eb = 1`
+gives scraped particles with surface normals `nx, ny, nz` plus `timeScraped`.
+
+Confinement rises to 0.795 at a 0.9 m vessel, matching Phase 0's bare-box number.
+Axial losses barely move with radius, so the wall cost is additive to the loss cone.
+Wall load peaks at the **midplane**, not the throats — gyroradius goes as 1/B, so
+orbits are widest where the field is weakest.
+
+Two traps: a vessel narrower than the source silently deletes particles born outside
+it at initialisation (they reach no loss channel — normalise by the step-0
+`ParticleNumber`, not by `npart`), and reading the scraping diagnostic before WarpX
+has finished flushing gives short counts that mimic a physics discrepancy.
+
 ## Caveats
 
 - `runs/*/diags/` is gitignored — 501 openPMD files per run is far too much to track.

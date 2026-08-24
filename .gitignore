@@ -8,3 +8,4 @@ __pycache__/
 .DS_Store
 runs/*/*.log
 runs/*/diags_*.log
+runs/*/vessel_*.log
