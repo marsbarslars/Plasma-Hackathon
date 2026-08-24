@@ -260,6 +260,30 @@ it at initialisation (they reach no loss channel — normalise by the step-0
 `ParticleNumber`, not by `npart`), and reading the scraping diagnostic before WarpX
 has finished flushing gives short counts that mimic a physics discrepancy.
 
+## runs/racetrack-leg
+
+The real SLAM device: coil field from `SLAM_specs/SLAM_vC5_warpX.h5`, vessel from
+`SLAM_specs/SLAM_VV.stl` via `eb2.geom_type = stl`.
+
+Three traps in those files, each of which fails silently:
+
+- **The STL is in millimetres** — `eb2.stl_scale = 0.001`.
+- **Its normals are inverted for WarpX** — the CAD faces outward, so WarpX treats
+  the tube interior as solid and deletes every particle at init. The run exits 0
+  with an empty diagnostic. `eb2.stl_reverse_normal = 1`.
+- **The field grid is padded** to `y = ±2.55` around a vessel reaching `y = ±0.73`,
+  which makes the orientation look wrong. The mapping is identity; the tell is
+  `|Bx|/|B| = 0.91`, B running along the straight legs.
+
+Each leg is a mirror: 0.1030 T at the leg midplane, 0.2546 T at its ends, ratio
+2.471, loss cone 39.50°. But at 0.103 T a 30 keV deuteron has a **0.344 m
+gyroradius in a 0.230 m bore**, so it hits the wall whatever its pitch — a
+geometric limit, not the loss cone.
+
+The export covers only the straight sections (`|x| ≤ 0.75`) and is thinner than the
+vessel in z (`|z| ≤ 0.20` against a 0.230 m bore), so the loop cannot be closed and
+wall loads are underestimates. See that directory's README.
+
 ## Caveats
 
 - `runs/*/diags/` is gitignored — 501 openPMD files per run is far too much to track.

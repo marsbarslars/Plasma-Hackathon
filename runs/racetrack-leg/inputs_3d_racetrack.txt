@@ -1,0 +1,133 @@
+##################################################################
+# SLAM racetrack - straight mirror leg, real field and real vessel.
+#
+# The exported field (SLAM_vC5_warpX.h5) covers x in [-0.75, +0.75],
+# which is exactly the straight sections of the racetrack. The 180 deg
+# bends live at |x| = 0.75..1.355 and have NO field data, so this deck
+# models one straight mirror cell and treats x = +-0.75 as "entered
+# the bend" rather than as a physical wall.
+#
+# Vessel geometry is the real SLAM_VV.stl. It is authored in MILLIMETRES,
+# so eb2.stl_scale converts it to metres.
+#
+# On the +y leg magnetic axis (y = +0.5421): |B| runs 0.1030 T at the
+# leg midplane to 0.2546 T at its ends -> mirror ratio 2.471, loss cone
+# 39.50 deg.
+##################################################################
+
+##########################
+# USER-DEFINED CONSTANTS #
+##########################
+my_constants.dt = 8.0e-9        # [s] ~64 steps per orbit at 0.2546 T
+my_constants.yaxis = 0.5421     # [m] magnetic axis of the +y leg
+my_constants.Np = 20000
+
+# Beam energy is the knob: sweep it with `Ekev=<value>` on the command line.
+my_constants.Ekev = 30.
+my_constants.mD = 1.9990*m_p                       # deuteron mass
+my_constants.uth = sqrt(2*Ekev*1.e3*q_e/(3*mD))/clight   # isotropic, <E> = Ekev
+
+############
+# NUMERICS #
+############
+geometry.dims = 3
+# Matched to the field export: it is what limits the modelled region.
+geometry.prob_lo = -0.75 -0.75 -0.20
+geometry.prob_hi =  0.75  0.75  0.20
+amr.n_cell = 96 96 24
+amr.max_level = 0
+max_step = 4000
+warpx.const_dt = dt
+
+##############
+# ALGORITHMS #
+##############
+algo.particle_shape = 1
+warpx.do_electrostatic = labframe
+warpx.grid_type = collocated
+warpx.serialize_initial_conditions = 0
+warpx.use_filter = 0
+
+##############
+# BOUNDARIES #
+##############
+# The real vacuum vessel, straight from CAD.
+eb2.geom_type = stl
+eb2.stl_file = SLAM_VV.stl
+eb2.stl_scale = 0.001                 # the STL is in millimetres
+eb2.stl_reverse_normal = 1            # CAD normals point out of the vessel;
+                                      # WarpX wants the plasma where the implicit
+                                      # function is negative, i.e. inside the tube
+warpx.eb_potential(x,y,z,t) = 0.
+boundary.particle_eb = Absorbing
+
+boundary.field_hi = pec pec pec
+boundary.field_lo = pec pec pec
+boundary.particle_hi = absorbing absorbing absorbing
+boundary.particle_lo = absorbing absorbing absorbing
+
+#############
+# PARTICLES #
+#############
+particles.species_names = ions
+
+ions.species_type = deuterium
+ions.do_not_deposit = 1
+ions.initialize_self_fields = 0
+
+ions.injection_style = gaussian_beam
+ions.npart = Np
+ions.q_tot = q_e*Np
+ions.x_m = 0.
+ions.y_m = yaxis
+ions.z_m = 0.
+ions.x_rms = 0.10
+ions.y_rms = 0.03
+ions.z_rms = 0.03
+
+ions.momentum_distribution_type = gaussian
+ions.ux_m = 0.
+ions.uy_m = 0.
+ions.uz_m = 0.
+ions.ux_th = uth
+ions.uy_th = uth
+ions.uz_th = uth
+
+# B is along +x on the leg axis, so ux/|u| is the pitch cosine.
+ions.addRealAttributes = pitch0 speed0
+ions.attribute.pitch0(x,y,z,ux,uy,uz,t) = ux/sqrt(ux*ux + uy*uy + uz*uz)
+ions.attribute.speed0(x,y,z,ux,uy,uz,t) = sqrt(ux*ux + uy*uy + uz*uz)
+
+ions.save_particles_at_eb = 1
+ions.save_particles_at_xlo = 1
+ions.save_particles_at_xhi = 1
+ions.save_particles_at_ylo = 1
+ions.save_particles_at_yhi = 1
+ions.save_particles_at_zlo = 1
+ions.save_particles_at_zhi = 1
+
+##########
+# FIELDS #
+##########
+particles.B_ext_particle_init_style = read_from_file
+particles.read_fields_from_path = SLAM_vC5_warpX.h5
+
+###############
+# DIAGNOSTICS #
+###############
+diagnostics.diags_names = diag1 scraped
+
+diag1.diag_type = Full
+diag1.format = openpmd
+diag1.intervals = 500
+diag1.fields_to_plot = Bx By Bz
+diag1.species = ions
+diag1.write_species = 1
+
+scraped.diag_type = BoundaryScraping
+scraped.format = openpmd
+scraped.intervals = 2000
+
+warpx.reduced_diags_names = confined
+confined.type = ParticleNumber
+confined.intervals = 20

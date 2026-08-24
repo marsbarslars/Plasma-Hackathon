@@ -9,3 +9,4 @@ __pycache__/
 runs/*/*.log
 runs/*/diags_*.log
 runs/*/vessel_*.log
+runs/*/run_*.log
