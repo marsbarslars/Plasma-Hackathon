@@ -224,6 +224,25 @@ Four things bitten by, all of which look like physics errors:
 Parameter sweeps need no templating: WarpX takes ParmParse overrides on the command
 line, e.g. `warpx run inputs max_step=2400 ions.npart=400`.
 
+## runs/nbi-angle-scan
+
+Phase 2: a directed 30 keV deuterium beam injected at angles from 0° to 90°. Only
+the fast-ion leg is modelled — a neutral beam flies straight and is invisible to
+PIC, so ions are injected at their birth points.
+
+`gaussian_beam` is built along +z and rotated bodily to the aiming angle.
+**`do_gaussian_beam_rotation_momenta` is the load-bearing flag** — without it only
+the footprint turns and the beam still flies along +z. `x/y/z_rms` are applied
+*before* rotation, so specify them axis-aligned.
+
+Result: a sharp transition with a 50% crossing at 33.2°, against a loss cone of
+34.70° computed with the on-axis `B_max` and 24.12° with the global maximum. The
+observed value sits between the bounds because `rg/L ≈ 0.24` here — μ is only
+approximately conserved and off-axis orbits see more field than the on-axis
+criterion assumes. See that directory's README.
+
+No vessel yet, so radial losses are the domain box, not a vacuum vessel.
+
 ## Caveats
 
 - `runs/*/diags/` is gitignored — 501 openPMD files per run is far too much to track.

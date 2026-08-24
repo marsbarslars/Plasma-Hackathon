@@ -1,0 +1,143 @@
+##################################################################
+# Neutral beam injection into the magnetic mirror, angle scan.
+#
+# A directed 30 keV deuterium beam is born at the midplane and aimed
+# at `alpha_deg` from the mirror axis. Only the fast-ion leg is
+# simulated: the neutral leg is a straight line that WarpX cannot see,
+# so the beam is injected as ions already at their birth points.
+#
+# On axis B is along +z, so the injection angle IS the pitch angle,
+# and the loss-cone criterion sin^2(alpha) > B_birth/B_max predicts a
+# transition at 34.7 deg for this field.
+#
+# Sweep with ParmParse overrides, no templating:
+#   warpx run inputs_3d_nbi_beam.txt alpha_deg=45 \
+#       diag1.file_prefix=diags/a45 reduced_diags.path=./diags/a45_reduced/
+##################################################################
+
+##########################
+# USER-DEFINED CONSTANTS #
+##########################
+my_constants.Lx = 2            # [m]
+my_constants.Ly = 2            # [m]
+my_constants.Lz = 5            # [m]
+my_constants.Bscale = 100.     # FEMM export -> 0.149 T midplane, 0.461 T throat
+my_constants.dt = 4.0e-9       # [s]
+my_constants.zmid = 0.5*Lz
+
+# Injection angle from the mirror axis. 0 = along B (deep in the loss
+# cone), 90 = perpendicular (best confined).
+my_constants.alpha_deg = 45.
+my_constants.alpha = alpha_deg*pi/180.
+
+# 30 keV deuterium: u = gamma*beta.
+my_constants.u0 = 5.6553e-3
+my_constants.div = 0.017       # ~1 deg beam divergence
+my_constants.espread = 0.01    # 1% energy spread
+
+my_constants.Np = 20000
+
+############
+# NUMERICS #
+############
+geometry.dims = 3
+geometry.prob_hi =  0.5*Lx  0.5*Ly Lz
+geometry.prob_lo = -0.5*Lx -0.5*Ly 0
+amr.n_cell = 40 40 40
+amr.max_level = 0
+max_step = 4000
+warpx.const_dt = dt
+
+##############
+# ALGORITHMS #
+##############
+algo.particle_shape = 1
+warpx.do_electrostatic = labframe
+warpx.grid_type = collocated
+warpx.serialize_initial_conditions = 0
+warpx.use_filter = 0
+
+##############
+# BOUNDARIES #
+##############
+# No vessel yet (that is Phase 1) - the domain edge is the wall, so
+# radial losses here are an artefact of the box, not of a real vessel.
+boundary.field_hi = pec pec pec
+boundary.field_lo = pec pec pec
+boundary.particle_hi = absorbing absorbing absorbing
+boundary.particle_lo = absorbing absorbing absorbing
+
+#############
+# PARTICLES #
+#############
+particles.species_names = beam
+
+beam.species_type = deuterium
+beam.do_not_deposit = 1              # test particles
+beam.initialize_self_fields = 0
+
+# A pencil of ions along +z, then rotated bodily to the aiming angle.
+# Sizes are pre-rotation and axis-aligned, as WarpX requires.
+beam.injection_style = gaussian_beam
+beam.npart = Np
+beam.q_tot = q_e*Np
+beam.x_m = 0.
+beam.y_m = 0.
+beam.z_m = zmid
+beam.x_rms = 0.04                    # beam radius
+beam.y_rms = 0.04
+beam.z_rms = 0.30                    # deposition length along the beam
+
+beam.momentum_distribution_type = gaussian
+beam.ux_m = 0.
+beam.uy_m = 0.
+beam.uz_m = u0
+beam.ux_th = u0*div
+beam.uy_th = u0*div
+beam.uz_th = u0*espread
+
+# Rotate about y, tilting the beam from +z toward +x by alpha.
+# The momenta must be rotated too, or only the footprint turns.
+beam.do_gaussian_beam_rotation = 1
+beam.gaussian_beam_rotation_axis = 0. 1. 0.
+beam.gaussian_beam_rotation_angle = alpha
+beam.do_gaussian_beam_rotation_momenta = 1
+
+# Birth pitch cosine against the on-axis field (+z) and birth speed.
+beam.addRealAttributes = pitch0 speed0
+beam.attribute.pitch0(x,y,z,ux,uy,uz,t) = uz/sqrt(ux*ux + uy*uy + uz*uz)
+beam.attribute.speed0(x,y,z,ux,uy,uz,t) = sqrt(ux*ux + uy*uy + uz*uz)
+
+beam.save_particles_at_zlo = 1
+beam.save_particles_at_zhi = 1
+beam.save_particles_at_xlo = 1
+beam.save_particles_at_xhi = 1
+beam.save_particles_at_ylo = 1
+beam.save_particles_at_yhi = 1
+
+##########
+# FIELDS #
+##########
+particles.B_ext_particle_init_style = read_from_file
+particles.read_fields_from_path = example-femm-3d.h5
+particles.read_fields_B_dependency(t) = Bscale
+
+###############
+# DIAGNOSTICS #
+###############
+diagnostics.diags_names = diag1 scraped
+
+diag1.diag_type = Full
+diag1.format = openpmd
+diag1.intervals = 500
+diag1.fields_to_plot = Bx By Bz
+diag1.species = beam
+diag1.write_species = 1
+
+scraped.diag_type = BoundaryScraping
+scraped.format = openpmd
+scraped.intervals = 2000
+
+warpx.reduced_diags_names = confined
+confined.type = ParticleNumber
+confined.intervals = 20

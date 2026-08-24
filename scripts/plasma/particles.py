@@ -90,6 +90,15 @@ def load_particles(series_path: str, iteration: int, species: str = "ions",
         ts = OpenPMDTimeSeries(series_path)
     x, y, z, ids = ts.get_particle(["x", "y", "z", "id"],
                                    species=species, iteration=iteration)
+
+    # A species can be entirely absorbed — every particle inside the loss cone,
+    # for instance — leaving a valid but empty record. Return an empty set
+    # rather than indexing into nothing.
+    if len(x) == 0:
+        e = np.array([])
+        return Particles(e, e, e, e, e, e, e.astype(int), float("nan"),
+                         {r: e for r in extra_records})
+
     mass = ts.get_particle(["mass"], species=species, iteration=iteration)[0][0]
     vx, vy, vz = _velocity_from_momentum(ts, species, iteration, mass)
 
