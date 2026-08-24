@@ -1,16 +1,30 @@
 # Plasma-Hackathon
 
 Particle simulations with [WarpX](https://warpx.readthedocs.io/en/latest/index.html),
-set up for single-node macOS: no MPI, OpenMP threading, 3D only.
+configured for single-node runs: no MPI, OpenMP threading, 3D only. Developed on
+macOS/arm64; the scripts do not assume it.
 
 Currently one experiment — `runs/magnetic-mirror`, which traces proton orbits through
 a magnetic mirror field exported from FEMM and renders them as an animation.
 
 ## Requirements
 
-- Homebrew `libomp`, `cmake`, `ninja`
+- `cmake`, `ninja`, and a C++ compiler
+- An OpenMP runtime — on macOS that means `libomp`, since AppleClang does not ship one
 - [`uv`](https://docs.astral.sh/uv/)
 - Python 3.12 (uv will fetch it)
+
+Any package manager works. The scripts probe conda, Homebrew, MacPorts and the usual
+system prefixes for `libomp`, so `brew install libomp cmake ninja`, `port install
+libomp cmake ninja`, or a conda environment are all fine. If yours lives somewhere
+unusual, point at it directly and the probing is skipped:
+
+```bash
+export OpenMP_ROOT=/path/to/libomp/prefix
+```
+
+`CMAKE_PREFIX_PATH` is honoured the same way — the scripts prepend to it, never
+replace it.
 
 ## Setup
 
@@ -71,6 +85,9 @@ tracking. The input deck and the FEMM field file are committed, so runs reproduc
 
 They work from any subdirectory, and honour `$WARPX_PROJECT` if you want to point them
 at a project explicitly. Put `scripts/` on your `$PATH` to drop the `../../`.
+
+They are plain bash with no package manager assumed, written against bash 3.2 so the
+version macOS ships works without upgrading.
 
 ## Updating WarpX
 

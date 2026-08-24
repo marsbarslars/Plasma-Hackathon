@@ -57,15 +57,24 @@ Helpers live in `scripts/`. Run them as `./scripts/warpx-sync`, or put `scripts/
 | `warpx-build [cmake args]` | CMake/Ninja into `vendor/warpx/build`, `-DWarpX_MPI=OFF -DWarpX_COMPUTE=OMP -DWarpX_DIMS=3 -DWarpX_FFT=ON`. |
 | `warpx3d [args]` | Runs `vendor/warpx/build/bin/warpx.3d`. |
 
-Requires Homebrew `libomp`, `cmake`, `ninja`, and `uv`.
+Requires `cmake`, `ninja`, `uv`, and an OpenMP runtime (`libomp` on macOS — AppleClang
+does not ship one). No specific package manager.
 
 `scripts/warpx-env.sh` holds the shared bash helpers and is sourced, not executed. It
 targets bash 3.2, the version macOS ships — so no associative arrays, no `${x^^}`, and
 no `set -u`, since bash 3.2 treats `"$@"` with zero arguments as an unset variable.
-It degrades rather than failing off macOS: `nproc` when there is no `sysctl`, and a
-warning rather than a hard error when there is no `brew`.
 
-`CMAKE_PREFIX_PATH` is prepended rather than overwritten, so an existing value survives.
+Toolchain discovery is package-manager agnostic. `warpx_export_toolchain` only fills
+in blanks — an exported `OpenMP_ROOT` or `CMAKE_PREFIX_PATH` always wins. Otherwise it
+walks `warpx_omp_candidates` (conda, `$HOMEBREW_PREFIX`, `brew --prefix libomp`, the
+two Homebrew defaults, MacPorts, `/usr/local`, `/usr`) and takes the first prefix that
+actually holds `include/omp.h` plus a `libomp`/`libgomp` — so `brew` need not be
+installed, only findable paths. Not finding one is a warning, not a hard error, since
+the compiler may already know where it is. `warpx_pkg_candidates` does the same for
+`CMAKE_PREFIX_PATH`, prepending one prefix so CMake can locate FFTW and friends;
+prepends are deduplicated, so calling it twice is a no-op.
+
+`warpx_ncpu` falls back from `sysctl` to `nproc` to a hardcoded 4.
 
 ## Running
 
