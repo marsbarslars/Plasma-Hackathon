@@ -19,9 +19,17 @@ name = "SLAM_vC5_warpX.h5"
 #    Resolution does NOT have to match WarpX; it interpolates to its own grid.
 #    Use a NODAL (collocated) grid: values live at the grid points x[i],y[j],z[k].
 # ----------------------------------------------------------------------
-xmin, xmax, nx = -0.75, 0.75, 75     # metres, number of NODES
-ymin, ymax, ny = -2.55, 2.55, 255
-zmin, zmax, nz = -0.2, 0.2,   20
+# The device's long axis is x. The coil set spans x -1.400..+1.400,
+# y -0.714..+0.908, z -0.412..+0.396, and SLAM_VV.stl spans x +-1.355,
+# y +-0.730, z +-0.230 (that file is in millimetres).
+#
+# The previous ranges had the long extent on y: x was cut at +-0.75,
+# less than half the machine, while 255 nodes covered a y range three
+# times wider than the coils occupy and where |B| had fallen to 2e-4 T.
+# Grid resolution is ~2 cm in every direction, as before.
+xmin, xmax, nx = -1.45, 1.45, 146    # metres, number of NODES
+ymin, ymax, ny = -0.95, 0.95,  96
+zmin, zmax, nz = -0.28, 0.28,  29
 
 x = np.linspace(xmin, xmax, nx)
 y = np.linspace(ymin, ymax, ny)
@@ -46,8 +54,15 @@ points = np.column_stack([X.ravel(order="C"),
 
 # --- call your coil field code on the list of points ---
 # It should return B as (N, 3) with columns [Bx, By, Bz] in Tesla.
-B =coils.compute_magnetic_field(points, basis = 'xyz')
-B = np.asarray(B, dtype=np.float64)
+# Evaluate in chunks: 400k points x 61 coils at once is a large temporary.
+_chunks = []
+_step = 20000
+for _i in range(0, points.shape[0], _step):
+    _chunks.append(np.asarray(
+        coils.compute_magnetic_field(points[_i:_i + _step], basis='xyz'),
+        dtype=np.float64))
+    print(f"  {min(_i + _step, points.shape[0])}/{points.shape[0]} points", flush=True)
+B = np.concatenate(_chunks, axis=0)
 assert B.shape == (points.shape[0], 3), f"expected (N,3), got {B.shape}"
 
 # reshape each component back onto the (nx, ny, nz) grid

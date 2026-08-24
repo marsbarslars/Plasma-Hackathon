@@ -31,20 +31,64 @@ FIELD_FILE = "SLAM_vC5_warpX.h5"
 STL_FILE = "SLAM_VV.stl"
 
 
-def leg_axis_field(path=FIELD_FILE, yaxis=0.5421):
+def closed_axis_field(path=FIELD_FILE, seed=(0.0, 0.530, 0.0), ds=0.004):
+    """Trace the magnetic axis around the loop; return (arclength, |B|).
+
+    A straight line through the machine is not the axis: outside the straight
+    sections it leaves the plasma and passes near coil filaments, which turns
+    the profile into spikes and makes the mirror ratio meaningless. Following
+    the field line is the only way to get |B| along the orbit particles see.
+    """
     import h5py
     f = h5py.File(path, "r")
     B = f["data/0/meshes/B"]
     off, sp = B.attrs["gridGlobalOffset"], B.attrs["gridSpacing"]
-    bx, by, bz = (B[k][:] for k in "xyz")
-    n = bx.shape
-    X = off[0] + sp[0] * np.arange(n[0])
-    Y = off[1] + sp[1] * np.arange(n[1])
-    Z = off[2] + sp[2] * np.arange(n[2])
-    j = int(np.argmin(np.abs(Y - yaxis)))
-    k = int(np.argmin(np.abs(Z)))
-    bmag = np.sqrt(bx[:, j, k] ** 2 + by[:, j, k] ** 2 + bz[:, j, k] ** 2)
-    return X, bmag
+    comp = [B[k][:] for k in "xyz"]
+    n = comp[0].shape
+    ax = [off[i] + sp[i] * np.arange(n[i]) for i in range(3)]
+
+    def at(p):
+        idx, fr = [], []
+        for a, g in zip(p, ax):
+            t = (a - g[0]) / (g[1] - g[0])
+            if t < 0 or t > len(g) - 1:
+                return None
+            t = min(t, len(g) - 1.001)
+            i = int(t); idx.append(i); fr.append(t - i)
+        out = []
+        for arr in comp:
+            v = 0.0
+            for dx in (0, 1):
+                for dy in (0, 1):
+                    for dz in (0, 1):
+                        w = ((fr[0] if dx else 1 - fr[0])
+                             * (fr[1] if dy else 1 - fr[1])
+                             * (fr[2] if dz else 1 - fr[2]))
+                        v += w * arr[idx[0] + dx, idx[1] + dy, idx[2] + dz]
+            out.append(v)
+        return np.array(out)
+
+    p0 = np.array(seed, float); p = p0.copy()
+    S, Bs, D, L = [0.0], [np.linalg.norm(at(p))], [0.0], 0.0
+    for _ in range(4000):
+        b = at(p)
+        if b is None:
+            break
+        m = np.linalg.norm(b)
+        if m < 1e-9:
+            break
+        p = p + ds * b / m; L += ds
+        S.append(L); Bs.append(m); D.append(float(np.linalg.norm(p - p0)))
+    S, Bs, D = np.array(S), np.array(Bs), np.array(D)
+
+    # Closure: the first return to the seed after leaving its neighbourhood.
+    # A fixed tolerance misses it, because the trace steps past the seed by up
+    # to `ds` and need not land inside any given radius.
+    away = S > 1.0
+    if away.any():
+        i = int(np.arange(len(S))[away][np.argmin(D[away])])
+        return S[:i + 1], Bs[:i + 1]
+    return S, Bs
 
 
 def vessel_outline(path=STL_FILE):
@@ -68,9 +112,10 @@ def analyse(energies):
         cnt = (lambda keys: int(np.isin(w, keys).sum())) if s is not None else (lambda k: 0)
         v = np.sqrt(2 * E * 1e3 * Q / M_D)
         rows.append(dict(E=E, final=float(frac[-1]) if frac is not None else np.nan,
-                         wall=cnt(["eb"]), bend=cnt(["xlo", "xhi"]),
-                         zedge=cnt(["zlo", "zhi"]),
-                         rg=M_D * v / (Q * 0.1030)))
+                         wall=cnt(["eb"]),
+                         bend=cnt(["xlo", "xhi"]),
+                         zedge=cnt(["zlo", "zhi", "ylo", "yhi"]),
+                         rg=M_D * v / (Q * 0.1033)))
     return rows
 
 
@@ -88,7 +133,7 @@ def make_figure(rows, out):
     n0 = wall + bend + zedge + final * 20000
 
     fig, axes = plt.subplots(2, 2, figsize=(13.5, 9))
-    fig.suptitle("SLAM racetrack · one straight mirror leg, real field and vessel",
+    fig.suptitle("SLAM racetrack · full closed loop, real field and vessel",
                  fontsize=13, y=0.98)
 
     # -- A: the vessel we actually loaded --------------------------------
@@ -100,27 +145,31 @@ def make_figure(rows, out):
         segs += [[p[0], p[1]], [p[1], p[2]], [p[2], p[0]]]
     ax.add_collection(LineCollection(np.array(segs), linewidths=0.12,
                                      colors="#8894A8", alpha=0.6))
-    ax.add_patch(plt.Rectangle((-0.75, -0.75), 1.5, 1.5, fill=False,
-                               edgecolor="#B03A2E", lw=1.8, ls="--"))
-    ax.text(0.0, 0.0, "modelled\nregion", ha="center", va="center",
-            color="#B03A2E", fontsize=9)
-    ax.set_xlim(-1.5, 1.5); ax.set_ylim(-0.95, 0.95)
+    ax.add_patch(plt.Rectangle((-1.40, -0.80), 2.80, 1.60, fill=False,
+                               edgecolor="#1F6F4A", lw=1.8, ls="--"))
+    ax.text(0.0, 0.0, "modelled region\n(whole loop)", ha="center", va="center",
+            color="#1F6F4A", fontsize=9)
+    ax.set_xlim(-1.6, 1.6); ax.set_ylim(-0.95, 0.95)
     ax.set_aspect("equal")
     ax.set_xlabel("x [m]"); ax.set_ylabel("y [m]")
-    ax.set_title("A · Vessel, and the field's reach", loc="left", fontsize=11)
+    ax.set_title("A · The whole racetrack is now modelled", loc="left", fontsize=11)
 
     # -- B: field along the leg ------------------------------------------
     ax = axes[0, 1]
-    X, bmag = leg_axis_field()
-    ax.plot(X, bmag, color="#00224E", lw=2)
+    S, bmag = closed_axis_field()
+    ax.plot(S, bmag, color="#00224E", lw=2)
     ratio = bmag.max() / bmag.min()
     lc = np.degrees(np.arcsin(np.sqrt(1 / ratio)))
-    ax.fill_between(X, bmag, bmag.min(), alpha=0.12, color="#00224E")
-    ax.set_xlabel("x along the leg [m]"); ax.set_ylabel("|B| on the leg axis [T]")
-    ax.set_title("B · Each leg is a mirror", loc="left", fontsize=11)
-    ax.annotate(f"$R_m$ = {ratio:.2f}\nloss cone {lc:.1f}$^\\circ$",
-                xy=(0.5, 0.75), xycoords="axes fraction", ha="center",
-                fontsize=10)
+    ax.fill_between(S, bmag, bmag.min(), alpha=0.12, color="#00224E")
+    ax.set_xlabel("distance along the magnetic axis [m]")
+    ax.set_ylabel("|B| [T]")
+    ax.set_title(f"B · One lap of the closed loop, {S[-1]:.2f} m", loc="left",
+                 fontsize=11)
+    ax.annotate(f"$R_m$ = {ratio:.2f},  loss cone {lc:.1f}$^\\circ$\n"
+                f"two mirror cells per lap",
+                xy=(0.5, 0.42), xycoords="axes fraction", ha="center",
+                fontsize=9.5, linespacing=1.4)
+    ax.set_ylim(0, bmag.max() * 1.15)
 
     # -- C: the geometric constraint -------------------------------------
     ax = axes[1, 0]
@@ -129,7 +178,7 @@ def make_figure(rows, out):
     rg = M_D * v / (Q * 0.1030)
     ax.plot(Ec, rg, color="#00224E", lw=2, label="gyroradius at $90^\\circ$")
     ax.plot(Ec, rg * np.sin(np.radians(lc)), color="#A69D75", lw=1.8, ls="--",
-            label=f"at the loss-cone edge ({lc:.0f}$^\\circ$)")
+            label=f"at the loss-cone edge ({lc:.1f}$^\\circ$)")
     ax.axhline(BORE, color="#B03A2E", lw=2)
     ax.annotate(f"vessel bore {BORE:.3f} m", xy=(0.98, BORE), xycoords=("axes fraction", "data"),
                 ha="right", va="bottom", color="#B03A2E", fontsize=9)
@@ -143,17 +192,16 @@ def make_figure(rows, out):
     # -- D: what that costs ----------------------------------------------
     ax = axes[1, 1]
     ax.bar(np.arange(len(E)), wall / n0, color="#B03A2E", label="vessel wall")
-    ax.bar(np.arange(len(E)), zedge / n0, bottom=wall / n0, color="#D9A441",
-           label="z domain edge (artefact)")
-    ax.bar(np.arange(len(E)), bend / n0, bottom=(wall + zedge) / n0,
-           color="#8894A8", label="entered the bend")
+    ax.bar(np.arange(len(E)), (zedge + bend) / n0, bottom=wall / n0,
+           color="#D9A441", label="domain edge (now zero)")
     ax.bar(np.arange(len(E)), final, bottom=(wall + zedge + bend) / n0,
-           color="#00224E", label="still confined")
+           color="#00224E", label="still circulating")
     ax.set_xticks(np.arange(len(E)))
     ax.set_xticklabels([f"{e:g}" for e in E])
     ax.set_xlabel("beam energy [keV]"); ax.set_ylabel("fraction")
     ax.set_ylim(0, 1)
-    ax.set_title("D · Fate after 32 $\\mu$s", loc="left", fontsize=11)
+    ax.set_title("D · Fate after 30 $\\mu$s · the wall takes everything",
+                 loc="left", fontsize=11)
     ax.legend(fontsize=8.5, frameon=False, loc="lower left")
 
     for a in axes.flat:

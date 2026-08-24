@@ -10,3 +10,4 @@ runs/*/*.log
 runs/*/diags_*.log
 runs/*/vessel_*.log
 runs/*/run_*.log
+SLAM_specs/SLAM_vC5_warpX.h5

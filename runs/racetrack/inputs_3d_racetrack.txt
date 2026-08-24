@@ -1,0 +1,139 @@
+##################################################################
+# SLAM racetrack - the full closed loop, real field and real vessel.
+#
+# The field is regenerated from SLAM0_coilset_fb_1p52_psi2p2e-3_C5.h5
+# over a grid that actually covers the machine (x +-1.45, y +-0.95,
+# z +-0.28). A field line seeded on the magnetic axis now CLOSES after
+# 6.280 m, going right around the loop through both bends.
+#
+# Vessel geometry is the real SLAM_VV.stl. It is authored in MILLIMETRES,
+# so eb2.stl_scale converts it, and its CAD normals face outward so
+# eb2.stl_reverse_normal flips them to WarpX's convention.
+#
+# Around the closed loop |B| runs 0.1033 T at a leg midplane to 0.2641 T
+# at the throats: ratio 2.556. But in a closed racetrack the loss cone
+# does not dump particles out of an end - they carry on into the bends -
+# so the only loss channel left is the vessel wall.
+##################################################################
+
+##########################
+# USER-DEFINED CONSTANTS #
+##########################
+# 55 steps per orbit at the 99th-percentile in-bore field of 0.4 T.
+# A handful of cells near coil filaments reach several tesla, but they
+# are 0.09% of the bore and sit against the wall.
+my_constants.dt = 6.0e-9        # [s]
+my_constants.yaxis = 0.5300     # [m] magnetic axis of the +y leg at x=0
+my_constants.Np = 20000
+
+# Beam energy is the knob: sweep it with `Ekev=<value>` on the command line.
+my_constants.Ekev = 30.
+my_constants.mD = 1.9990*m_p                       # deuteron mass
+my_constants.uth = sqrt(2*Ekev*1.e3*q_e/(3*mD))/clight   # isotropic, <E> = Ekev
+
+############
+# NUMERICS #
+############
+geometry.dims = 3
+# Covers the whole vessel (x +-1.355, y +-0.730, z +-0.230) and stays
+# inside the field grid (x +-1.45, y +-0.95, z +-0.28). ~2 cm cells,
+# matching the field export.
+geometry.prob_lo = -1.40 -0.80 -0.26
+geometry.prob_hi =  1.40  0.80  0.26
+amr.n_cell = 144 80 24        # each divisible by blocking_factor 8
+amr.max_level = 0
+max_step = 5000
+warpx.const_dt = dt
+
+##############
+# ALGORITHMS #
+##############
+algo.particle_shape = 1
+warpx.do_electrostatic = labframe
+warpx.grid_type = collocated
+warpx.serialize_initial_conditions = 0
+warpx.use_filter = 0
+
+##############
+# BOUNDARIES #
+##############
+# The real vacuum vessel, straight from CAD.
+eb2.geom_type = stl
+eb2.stl_file = SLAM_VV.stl
+eb2.stl_scale = 0.001                 # the STL is in millimetres
+eb2.stl_reverse_normal = 1            # CAD normals point out of the vessel;
+                                      # WarpX wants the plasma where the implicit
+                                      # function is negative, i.e. inside the tube
+warpx.eb_potential(x,y,z,t) = 0.
+boundary.particle_eb = Absorbing
+
+boundary.field_hi = pec pec pec
+boundary.field_lo = pec pec pec
+boundary.particle_hi = absorbing absorbing absorbing
+boundary.particle_lo = absorbing absorbing absorbing
+
+#############
+# PARTICLES #
+#############
+particles.species_names = ions
+
+ions.species_type = deuterium
+ions.do_not_deposit = 1
+ions.initialize_self_fields = 0
+
+ions.injection_style = gaussian_beam
+ions.npart = Np
+ions.q_tot = q_e*Np
+ions.x_m = 0.
+ions.y_m = yaxis
+ions.z_m = 0.
+ions.x_rms = 0.15
+ions.y_rms = 0.03
+ions.z_rms = 0.03
+
+ions.momentum_distribution_type = gaussian
+ions.ux_m = 0.
+ions.uy_m = 0.
+ions.uz_m = 0.
+ions.ux_th = uth
+ions.uy_th = uth
+ions.uz_th = uth
+
+# B is along +x on the leg axis, so ux/|u| is the pitch cosine.
+ions.addRealAttributes = pitch0 speed0
+ions.attribute.pitch0(x,y,z,ux,uy,uz,t) = ux/sqrt(ux*ux + uy*uy + uz*uz)
+ions.attribute.speed0(x,y,z,ux,uy,uz,t) = sqrt(ux*ux + uy*uy + uz*uz)
+
+ions.save_particles_at_eb = 1
+ions.save_particles_at_xlo = 1
+ions.save_particles_at_xhi = 1
+ions.save_particles_at_ylo = 1
+ions.save_particles_at_yhi = 1
+ions.save_particles_at_zlo = 1
+ions.save_particles_at_zhi = 1
+
+##########
+# FIELDS #
+##########
+particles.B_ext_particle_init_style = read_from_file
+particles.read_fields_from_path = SLAM_vC5_warpX.h5
+
+###############
+# DIAGNOSTICS #
+###############
+diagnostics.diags_names = diag1 scraped
+
+diag1.diag_type = Full
+diag1.format = openpmd
+diag1.intervals = 500
+diag1.fields_to_plot = Bx By Bz
+diag1.species = ions
+diag1.write_species = 1
+
+scraped.diag_type = BoundaryScraping
+scraped.format = openpmd
+scraped.intervals = 2000
+
+warpx.reduced_diags_names = confined
+confined.type = ParticleNumber
+confined.intervals = 20

@@ -260,29 +260,36 @@ it at initialisation (they reach no loss channel — normalise by the step-0
 `ParticleNumber`, not by `npart`), and reading the scraping diagnostic before WarpX
 has finished flushing gives short counts that mimic a physics discrepancy.
 
-## runs/racetrack-leg
+## runs/racetrack
 
-The real SLAM device: coil field from `SLAM_specs/SLAM_vC5_warpX.h5`, vessel from
-`SLAM_specs/SLAM_VV.stl` via `eb2.geom_type = stl`.
+The real SLAM device as a closed loop: coil field generated from
+`SLAM_specs/SLAM0_coilset_fb_1p52_psi2p2e-3_C5.h5` by
+`make_field_file_with_DESC.py`, vessel from `SLAM_specs/SLAM_VV.stl` via
+`eb2.geom_type = stl`.
 
-Three traps in those files, each of which fails silently:
+**The shipped field export had its grid ranges on the wrong axes** — `x ±0.75`
+against a machine reaching ±1.40, and `y ±2.55` where the coils span ±0.9. The
+generator now uses `x ±1.45, y ±0.95, z ±0.28` at the same ~2 cm resolution. The
+check that it is right: a field line on the magnetic axis **closes after 6.388 m**;
+before, it ran out of grid after 0.75 m. The `.h5` is derived and gitignored.
 
-- **The STL is in millimetres** — `eb2.stl_scale = 0.001`.
+Two traps in the STL, both silent:
+
+- **It is in millimetres** — `eb2.stl_scale = 0.001`.
 - **Its normals are inverted for WarpX** — the CAD faces outward, so WarpX treats
-  the tube interior as solid and deletes every particle at init. The run exits 0
-  with an empty diagnostic. `eb2.stl_reverse_normal = 1`.
-- **The field grid is padded** to `y = ±2.55` around a vessel reaching `y = ±0.73`,
-  which makes the orientation look wrong. The mapping is identity; the tell is
-  `|Bx|/|B| = 0.91`, B running along the straight legs.
+  the tube interior as solid and deletes every particle at init, exiting 0 with an
+  empty diagnostic. `eb2.stl_reverse_normal = 1`.
 
-Each leg is a mirror: 0.1030 T at the leg midplane, 0.2546 T at its ends, ratio
-2.471, loss cone 39.50°. But at 0.103 T a 30 keV deuteron has a **0.344 m
-gyroradius in a 0.230 m bore**, so it hits the wall whatever its pitch — a
-geometric limit, not the loss cone.
+One lap holds two mirror cells (the straight legs) joined by low-field bends:
+`|B|` 0.1030–0.2583 T, ratio 2.508, loss cone 39.15°. Closing the loop removes the
+axial loss channel entirely — the wall is the only exit, and zero particles reach
+a domain boundary.
 
-The export covers only the straight sections (`|x| ≤ 0.75`) and is thinner than the
-vessel in z (`|z| ≤ 0.20` against a 0.230 m bore), so the loop cannot be closed and
-wall loads are underestimates. See that directory's README.
+The binding constraint is geometric: at 0.103 T a 30 keV deuteron has a **0.343 m
+gyroradius in a 0.230 m bore**, so it hits the wall whatever its pitch. Confinement
+runs 0.458 at 3 keV to 0.034 at 30 keV. DESC filaments are infinitely thin so `|B|`
+diverges near windings — a few bore cells reach several tesla, but they are 0.09%
+of the bore. See that directory's README.
 
 ## Caveats
 
