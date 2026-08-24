@@ -46,12 +46,8 @@ There are two independent WarpX builds. Neither rebuilds the other.
 
 After changing the submodule pointer, run **both** `warpx-rebuild` and `warpx-build`.
 
-The helpers exist in two parallel forms, same names and same behaviour:
-
-- **`scripts/warpx-*`** — bash, committed, the portable copy. Run as `./scripts/warpx-sync`,
-  or put `scripts/` on `$PATH`.
-- **fish functions** in `~/.config/fish/functions/`, autoloaded, sourced in `fish_ref.md`.
-  Not in the repo, so keep them in step with `scripts/` when either changes.
+Helpers live in `scripts/`. Run them as `./scripts/warpx-sync`, or put `scripts/` on
+`$PATH` to drop the prefix.
 
 | Command | Does |
 | --- | --- |
@@ -66,12 +62,10 @@ Requires Homebrew `libomp`, `cmake`, `ninja`, and `uv`.
 `scripts/warpx-env.sh` holds the shared bash helpers and is sourced, not executed. It
 targets bash 3.2, the version macOS ships — so no associative arrays, no `${x^^}`, and
 no `set -u`, since bash 3.2 treats `"$@"` with zero arguments as an unset variable.
-It also degrades where the fish versions assume macOS: `nproc` when there is no
-`sysctl`, and a warning rather than a hard failure when there is no `brew`.
+It degrades rather than failing off macOS: `nproc` when there is no `sysctl`, and a
+warning rather than a hard error when there is no `brew`.
 
-One deliberate difference from `fish_ref.md`: `warpx-sync.fish` *overwrites*
-`CMAKE_PREFIX_PATH` with the Homebrew prefix while `warpx-build.fish` prepends to it.
-The bash helpers prepend in both cases, so an existing `CMAKE_PREFIX_PATH` survives.
+`CMAKE_PREFIX_PATH` is prepended rather than overwritten, so an existing value survives.
 
 ## Running
 
@@ -89,7 +83,7 @@ to catch typo'd keys**, which WarpX ignores silently rather than erroring.
 Then animate:
 
 ```bash
-python ../../scripts/animate_mirror.py --mp4 mirror.mp4
+../../.venv/bin/python ../../scripts/animate_mirror.py --mp4 mirror.mp4
 ```
 
 `animate_mirror.py` reads `diags/diag1` via `openpmd-viewer` and renders `|B|`
