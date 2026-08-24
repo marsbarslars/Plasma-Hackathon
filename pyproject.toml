@@ -1,0 +1,22 @@
+[project]
+name = "plasma-hackathon"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pywarpx",
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "pandas",
+    "openpmd-viewer",
+    "pyvista",
+    "jupyter",
+    "imageio-ffmpeg",
+    "imageio>=2.37.4",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+pywarpx = { path = "vendor/warpx" }

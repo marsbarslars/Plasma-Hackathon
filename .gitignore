@@ -1,0 +1,6 @@
+.venv/
+vendor/
+runs/*/diags/
+runs/*/Backtrace.*
+runs/*/warpx_used_inputs
+.mypy_cache/
