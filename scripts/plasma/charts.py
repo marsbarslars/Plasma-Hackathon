@@ -101,8 +101,12 @@ class ChartPanel:
 
         ax = self.ax_v
         v = self.v_scale
-        self.xedges = np.linspace(-v, v, 110)
-        self.yedges = np.linspace(0, v, 56)
+        # Coarser than looks natural on purpose. At 110x56 there are ~4 counts
+        # per occupied bin, so neighbouring bins differ by Poisson noise of the
+        # same size as the signal, and a linear colour ramp turns each integer
+        # count into its own visible band.
+        self.xedges = np.linspace(-v, v, 78)
+        self.yedges = np.linspace(0, v, 40)
 
         # Start the ramp exactly at the panel colour so empty bins disappear.
         base = __import__("matplotlib").colormaps["inferno"](np.linspace(0, 1, 256))
@@ -135,14 +139,42 @@ class ChartPanel:
                                bbox=dict(facecolor=GROUND, edgecolor="none",
                                          alpha=0.75, pad=3.5))
 
-    def _update_velocity(self, vpar, vperp, n_total):
+    def _density(self, vpar, vperp):
+        """Smoothed 2D density. Raw counts are a noisy estimator at this
+        sample size; a light Gaussian makes the panel show the distribution
+        rather than the shot noise on it."""
         h, _, _ = np.histogram2d(vpar / 1e6, vperp / 1e6,
                                  bins=[self.xedges, self.yedges])
-        if self._ceiling is None:      # lock the scale on the first frame
-            self._ceiling = max(float(np.percentile(h[h > 0], 97))
-                                if np.any(h > 0) else 1.0, 1.0)
+        try:
+            from scipy.ndimage import gaussian_filter
+        except ImportError:
+            return h
+        return gaussian_filter(h, sigma=1.1, mode="nearest")
+
+    def calibrate(self, samples):
+        """Fix the colour ceiling from frames spread across the run.
+
+        Locking it on frame 0 clips badly: the population starts spread out and
+        then concentrates, so the final peak is several times the initial one
+        and most of the distribution saturates to flat white.
+        """
+        tops = []
+        for vpar, vperp in samples:
+            if len(vpar) == 0:
+                continue
+            d = self._density(vpar, vperp)
+            if np.any(d > 0):
+                tops.append(float(np.percentile(d[d > 0], 99)))
+        self._ceiling = max(tops) if tops else 1.0
+        self._v_img.set_clim(0, self._ceiling)
+
+    def _update_velocity(self, vpar, vperp, n_total):
+        d = self._density(vpar, vperp)
+        if self._ceiling is None:      # not calibrated; fall back to this frame
+            self._ceiling = max(float(np.percentile(d[d > 0], 99))
+                                if np.any(d > 0) else 1.0, 1.0)
             self._v_img.set_clim(0, self._ceiling)
-        self._v_img.set_array(h.T.ravel())
+        self._v_img.set_array(d.T.ravel())
         self._v_text.set_text(f"{len(vpar):,} of {n_total:,} confined")
 
     # ------------------------------------------------------------------ draw

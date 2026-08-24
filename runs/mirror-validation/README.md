@@ -60,13 +60,38 @@ sampled run instead:
 distribution emptying its loss cone. Keep the full 20 000 particles for that panel
 even though only 30 tracks are drawn — at 400 the histogram is too sparse to read.
 It reads every particle each frame, so it is the slow part of the render;
-`--no-charts` skips it.
+`--no-charts` skips it. Note the animation covers 2400 steps (9.6 us), not the
+main run's 40 us.
+
+The density panel is a *smoothed* estimate with its colour ceiling calibrated
+across six frames spread through the run. Both matter: raw counts at this sample
+size are ~4 per bin, so Poisson noise is the same size as the signal, and a
+ceiling locked on frame 0 clips badly once the distribution concentrates. Drawn
+naively the panel shows contour-like bands that are pure shot noise.
 
 That run writes ~1.5 GB, nearly all of it the grid `B` field repeated per frame
 rather than the particles.
 
 Note `reduced_diags.path` — without it the second run overwrites the first run's
 `diags/reducedfiles/confined.txt`, which panel E reads.
+
+## Bounce-phase structure
+
+The velocity distribution is not smooth at early times. Along `v_par ~ 0` the
+counts show a real peak-trough-peak, ~6 sigma in the raw histogram and not an
+artifact of binning or smoothing. It decays as the run proceeds — peak/trough
+2.54 at 9.6 us against 1.82 at 40 us.
+
+That is bounce-phase coherence. Every particle starts at t = 0 from the midplane
+and there are no collisions, so the population keeps its phase memory and only
+mixes as particles with different bounce periods drift apart. Expect it to matter
+whenever a run is read before a few bounce times have passed, and expect a beam —
+which is far more monoenergetic than this Maxwellian — to show it much more
+strongly.
+
+A useful consistency check fell out of this: the orbit render run and the main run
+give *bit-identical* velocity histograms at the same step, so the short run is a
+faithful sub-sample of the long one rather than a separate realisation.
 
 ## Gotchas found here
 

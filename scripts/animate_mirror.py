@@ -284,8 +284,21 @@ def main():
         panel = ChartPanel(args.chart_width, win[1], (b_lo, b_hi), v_scale,
                            fmap.loss_cone_deg())
         n_total = len(p0)
+
+        # Calibrate the density scale on frames spread across the run, not on
+        # frame 0 alone: the distribution concentrates as the loss cone empties.
+        probe = iterations[:: max(1, len(iterations) // 6)][:6]
+        samples = []
+        for it in probe:
+            q = load_particles(args.path, it, species, ts=ts)
+            if len(q):
+                bq = fmap.interpolate(q.x, q.y, q.z)
+                samples.append(q.v_par_perp(bq))
+        panel.calibrate(samples)
+
         print(f"charts: |B| {b_lo:.3f}-{b_hi:.3f} T, loss cone "
-              f"{fmap.loss_cone_deg():.1f} deg, {n_total} particles")
+              f"{fmap.loss_cone_deg():.1f} deg, {n_total} particles, "
+              f"density ceiling calibrated on {len(samples)} frames")
 
     writer = None
     if charts and (args.gif or args.mp4):

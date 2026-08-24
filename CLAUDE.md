@@ -159,7 +159,12 @@ distribution over **every** particle in the frame, with the loss cone drawn on.
 Colour does two jobs, so it uses two maps rather than overloading one: field strength
 stays on cividis (matching the lines the bar labels), particle density uses an
 inferno ramp whose first entry is replaced by the panel background so empty velocity
-space reads as empty, and the loss cone is a cyan absent from both. Charted frames are composited in numpy and written with `imageio`
+space reads as empty, and the loss cone is a cyan absent from both.
+
+The density panel is smoothed and its ceiling calibrated over six frames spread
+through the run. Drawing raw counts on a ceiling locked to frame 0 produces
+convincing-looking contour bands that are entirely Poisson noise — roughly four
+counts per bin stretched across ~18 integer levels, with the top 14% clipped flat. Charted frames are composited in numpy and written with `imageio`
 rather than PyVista's own movie writer, since the panel is matplotlib; the render
 window is sized to a multiple of 16 so ffmpeg does not silently resize.
 
