@@ -1,6 +1,7 @@
 # Plasma-Hackathon
 
-WarpX experiments on macOS/arm64. Single-node, no MPI, OpenMP threading, 3D only.
+WarpX experiments. Single-node, no MPI, 3D only, on CPU (OpenMP or serial) or an
+NVIDIA GPU. Developed on macOS/arm64; the tooling does not assume it.
 
 Upstream docs: <https://warpx.readthedocs.io/en/latest/index.html>
 Vendored WarpX has its own agent notes at `vendor/warpx/CLAUDE.md` — those describe
@@ -13,7 +14,9 @@ pyproject.toml           uv project (package = false); pywarpx sourced from vend
 .venv/                   python 3.12
 vendor/warpx/            WarpX submodule, tracking upstream `development`
 vendor/warpx/build/      standalone CMake/Ninja build → bin/warpx.3d
-scripts/warpx-*          bash helpers (see below)
+scripts/warpx.py         the helper; stdlib-only Python, runs before .venv exists
+scripts/warpx            POSIX wrapper
+scripts/warpx.cmd        Windows wrapper
 scripts/animate_mirror.py
 runs/<name>/             one directory per simulation, run from inside it
 ```
@@ -41,40 +44,82 @@ There are two independent WarpX builds. Neither rebuilds the other.
 
 | What | Built by | Used by |
 | --- | --- | --- |
-| `pywarpx` (PICMI/Python) | `warpx-sync` / `warpx-rebuild` | `import pywarpx` in `.venv` |
-| `warpx.3d` (executable) | `warpx-build` | `warpx3d` |
+| `pywarpx` (PICMI/Python) | `warpx sync` / `warpx rebuild` | `import pywarpx` in `.venv` |
+| `warpx.3d` (executable) | `warpx build` | `warpx run` |
 
-After changing the submodule pointer, run **both** `warpx-rebuild` and `warpx-build`.
+After changing the submodule pointer, run **both** `warpx rebuild` and `warpx build`.
 
-Helpers live in `scripts/`. Run them as `./scripts/warpx-sync`, or put `scripts/` on
-`$PATH` to drop the prefix.
+Run them as `./scripts/warpx <command>`, or `scripts\warpx.cmd <command>` on Windows.
+Put `scripts/` on `$PATH` to drop the prefix.
 
-| Command | Does |
-| --- | --- |
-| `warpx-root` | Prints the project root: `$WARPX_PROJECT`, else walks up for `vendor/warpx` + `pyproject.toml`. Everything else builds on it, so the helpers work from any subdirectory. |
-| `warpx-sync [uv args]` | `uv sync` with `WARPX_MPI=OFF`, `WARPX_COMPUTE=OMP`, `WARPX_DIMS=3`. |
-| `warpx-rebuild [uv args]` | `warpx-sync --reinstall-package pywarpx`; forces the extension rebuild. |
-| `warpx-build [cmake args]` | CMake/Ninja into `vendor/warpx/build`, `-DWarpX_MPI=OFF -DWarpX_COMPUTE=OMP -DWarpX_DIMS=3 -DWarpX_FFT=ON`. |
-| `warpx3d [args]` | Runs `vendor/warpx/build/bin/warpx.3d`. |
+Requires `cmake`, `ninja`, a C++ compiler, `uv`, and Python 3.8+ on `PATH` for the
+helper itself. No specific package manager, and no shell beyond `/bin/sh` or `cmd`.
 
-Requires `cmake`, `ninja`, `uv`, and an OpenMP runtime (`libomp` on macOS — AppleClang
-does not ship one). No specific package manager.
+### Why Python and not shell
 
-`scripts/warpx-env.sh` holds the shared bash helpers and is sourced, not executed. It
-targets bash 3.2, the version macOS ships — so no associative arrays, no `${x^^}`, and
-no `set -u`, since bash 3.2 treats `"$@"` with zero arguments as an unset variable.
+The helper was bash, which cannot run on Windows without extra tooling, and the
+project already depends on Python. Rewriting it as one stdlib-only module avoids
+maintaining parallel copies per platform — the same mistake the earlier fish/bash
+split made. It targets Python 3.8+ and imports nothing outside the standard library,
+because `warpx sync` is what *creates* `.venv`; it cannot depend on it. The two
+wrappers do nothing but locate an interpreter and hand off.
 
-Toolchain discovery is package-manager agnostic. `warpx_export_toolchain` only fills
-in blanks — an exported `OpenMP_ROOT` or `CMAKE_PREFIX_PATH` always wins. Otherwise it
-walks `warpx_omp_candidates` (conda, `$HOMEBREW_PREFIX`, `brew --prefix libomp`, the
-two Homebrew defaults, MacPorts, `/usr/local`, `/usr`) and takes the first prefix that
-actually holds `include/omp.h` plus a `libomp`/`libgomp` — so `brew` need not be
-installed, only findable paths. Not finding one is a warning, not a hard error, since
-the compiler may already know where it is. `warpx_pkg_candidates` does the same for
-`CMAKE_PREFIX_PATH`, prepending one prefix so CMake can locate FFTW and friends;
-prepends are deduplicated, so calling it twice is a no-op.
+### How configuration resolves
 
-`warpx_ncpu` falls back from `sysctl` to `nproc` to a hardcoded 4.
+One direction, most explicit first: **command-line flag > environment variable >
+autodetection**. `warpx info` prints the resolved result without building anything,
+and is the first thing to run when a build misbehaves.
+
+`--compute` picks the backend. Autodetection is `cuda_available()` first — which
+requires an `nvcc`, not merely a driver, since a machine that can *run* CUDA cannot
+necessarily *compile* it — then per-OS: Windows gets `NOACC`, macOS gets `OMP` only
+if libomp is actually found, Linux gets `OMP`. Windows is serial because MSVC
+implements only OpenMP 2.0 and WarpX's own Windows CI builds `NOACC`.
+
+`--fft` follows the backend: `ON` for CUDA (cuFFT ships with the toolkit), `OFF` on
+Windows (FFTW is rarely present on a stock toolchain), `ON` otherwise. Note this
+applies to the standalone build only; pywarpx keeps upstream's own default of `OFF`,
+so the two targets differ here.
+
+`OpenMP_ROOT` is only probed on macOS — GCC ships libgomp and MSVC has `/openmp`
+built in, so elsewhere the compiler already knows. The probe walks conda,
+`$HOMEBREW_PREFIX`, `brew --prefix libomp`, the Homebrew and linuxbrew defaults,
+MacPorts, `/usr/local` and `/usr`, accepting the first prefix that genuinely holds
+`include/omp.h` beside a `libomp`/`libgomp` rather than one that merely exists.
+`CMAKE_PREFIX_PATH` gets the same treatment, plus `$CONDA_PREFIX/Library` and
+`$VCPKG_ROOT` on Windows; it is prepended to and deduplicated, never replaced.
+An exported `OpenMP_ROOT` or `CMAKE_PREFIX_PATH` skips probing entirely.
+
+### Details worth knowing
+
+`WarpX_DIMS` is `3` but WarpX names the binary `warpx.3d` — `DIMS` and `DIM_SUFFIX`
+are separate constants for exactly that reason. CMake symlinks the fully-qualified
+name (`warpx.3d.NOMPI.OMP.DP.PDP.OPMD.FFT.EB.QED`) to the short one, but that step
+needs privileges Windows withholds by default, so `solver_path()` falls back to
+globbing `warpx.3d.*` and taking the newest.
+
+Argument splitting is manual, not `argparse.REMAINDER`, which refuses to start
+collecting on an option-like token and would reject `warpx sync --reinstall`.
+Everything after the subcommand is forwarded verbatim; a helper flag found *after*
+the subcommand is an error, since `warpx build --compute cuda` would otherwise hand
+`--compute` to cmake and quietly build the wrong backend.
+
+`cmake --build` is always passed `--config Release`: multi-config generators (Visual
+Studio, Xcode) require it and single-config ones ignore it. Ninja is used when
+present, otherwise CMake picks the platform default.
+
+Switching backends reconfigures the same build directory, so it forces a full
+recompile.
+
+### Untested paths
+
+Everything here runs on macOS/arm64 with OpenMP. Linux, Windows and CUDA are written
+from WarpX's documented support and CI configuration. `scripts/test_warpx.py` covers
+the decisions by faking the platform — the full OS × CUDA × libomp matrix, the
+precedence rules, and the solver-lookup fallbacks — but a passing suite only means the
+*logic* is right; no end-to-end build has been done on those platforms. Windows is the weakest: upstream's Windows CI is
+disabled (`if: 0`, citing WarpX issue #5230), so WarpX itself may not build cleanly
+there regardless of this tooling.
 
 ## Running
 
@@ -82,7 +127,7 @@ From inside the run directory, so diagnostics land in `./diags/`:
 
 ```bash
 cd runs/magnetic-mirror
-../../scripts/warpx3d inputs_3d_magnetic_mirror.txt
+../../scripts/warpx run inputs_3d_magnetic_mirror.txt
 ```
 
 WarpX writes `warpx_used_inputs` next to the output — it lists every parameter the

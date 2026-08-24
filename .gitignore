@@ -3,3 +3,5 @@ runs/*/diags/
 Backtrace.*
 runs/*/warpx_used_inputs
 .mypy_cache/
+__pycache__/
+*.py[cod]
