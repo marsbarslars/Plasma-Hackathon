@@ -1,0 +1,144 @@
+##################################################################
+# Magnetic mirror, validation case.
+#
+# Isotropic 30 keV deuterons at the midplane of the FEMM mirror
+# field, scaled to a fusion-relevant 0.15-0.46 T. Test particles:
+# only the applied B matters.
+#
+# Purpose: the loss cone should carve itself out of velocity space.
+# On-axis mirror ratio in z=[0,5] is 3.1095, so the loss-cone
+# half-angle is 34.55 deg. Particles with initial pitch angle below
+# that escape out the ends; the rest bounce.
+#
+# Everything here is deuterium, unlike runs/magnetic-mirror which
+# used 8 eV protons and is not an NBI-relevant case.
+##################################################################
+
+##########################
+# USER-DEFINED CONSTANTS #
+##########################
+my_constants.Lx = 2            # [m]
+my_constants.Ly = 2            # [m]
+my_constants.Lz = 5            # [m]
+
+# Field scaling. The FEMM export peaks at 9.2 mT, which leaves a
+# 30 keV deuteron with a 7 m gyroradius - unmagnetised in a 5 m box.
+# x100 puts the midplane at 0.149 T and the throats at 0.463 T.
+my_constants.Bscale = 100.
+
+# dt resolves the fastest gyration in the domain: 142 ns at the
+# global field maximum of 0.92 T, so this is ~35 steps per orbit
+# there and ~57 at the mirror throats.
+my_constants.dt = 4.0e-9       # [s]
+
+# Isotropic Maxwellian with <E> = 30 keV for deuterium:
+# u_th = sqrt(2E/(3m))/c per component.
+my_constants.uth = 3.2651e-03
+
+my_constants.Np = 20000
+my_constants.zmid = 0.5*Lz
+
+############
+# NUMERICS #
+############
+geometry.dims = 3
+geometry.prob_hi =  0.5*Lx  0.5*Ly Lz
+geometry.prob_lo = -0.5*Lx -0.5*Ly 0
+amr.n_cell = 40 40 40
+amr.max_level = 0
+max_step = 10000
+warpx.const_dt = dt
+
+##############
+# ALGORITHMS #
+##############
+algo.particle_shape = 1
+warpx.do_electrostatic = labframe
+warpx.grid_type = collocated
+warpx.serialize_initial_conditions = 0
+warpx.use_filter = 0
+
+##############
+# BOUNDARIES #
+##############
+boundary.field_hi = pec pec pec
+boundary.field_lo = pec pec pec
+boundary.particle_hi = absorbing absorbing absorbing
+boundary.particle_lo = absorbing absorbing absorbing
+
+#############
+# PARTICLES #
+#############
+particles.species_names = ions
+
+ions.species_type = deuterium
+ions.do_not_deposit = 1              # test particles
+ions.initialize_self_fields = 0
+
+ions.injection_style = gaussian_beam
+ions.npart = Np
+ions.q_tot = q_e*Np
+ions.x_m = 0.
+ions.y_m = 0.
+ions.z_m = zmid
+ions.x_rms = 0.10
+ions.y_rms = 0.10
+ions.z_rms = 0.15
+
+# Isotropic: equal thermal spread in all three directions, no drift.
+ions.momentum_distribution_type = gaussian
+ions.ux_m = 0.
+ions.uy_m = 0.
+ions.uz_m = 0.
+ions.ux_th = uth
+ions.uy_th = uth
+ions.uz_th = uth
+
+# Record each particle's birth pitch cosine and birth speed so loss
+# can be binned by initial pitch without reconstructing step 0.
+# B is along +z on axis at the midplane, so uz/|u| is cos(pitch).
+ions.addRealAttributes = pitch0 speed0
+ions.attribute.pitch0(x,y,z,ux,uy,uz,t) = uz/sqrt(ux*ux + uy*uy + uz*uz)
+ions.attribute.speed0(x,y,z,ux,uy,uz,t) = sqrt(ux*ux + uy*uy + uz*uz)
+
+# Keep every particle that leaves, at every boundary.
+ions.save_particles_at_zlo = 1
+ions.save_particles_at_zhi = 1
+ions.save_particles_at_xlo = 1
+ions.save_particles_at_xhi = 1
+ions.save_particles_at_ylo = 1
+ions.save_particles_at_yhi = 1
+
+##########
+# FIELDS #
+##########
+# Applied directly to the particles; the electrostatic solver has no
+# source because the ions do not deposit.
+particles.B_ext_particle_init_style = read_from_file
+particles.read_fields_from_path = example-femm-3d.h5
+particles.read_fields_B_dependency(t) = Bscale
+
+###############
+# DIAGNOSTICS #
+###############
+diagnostics.diags_names = diag1 scraped
+
+diag1.diag_type = Full
+diag1.format = openpmd
+diag1.intervals = 200
+diag1.fields_to_plot = Bx By Bz
+diag1.species = ions
+diag1.write_species = 1
+diag1.ions.variables = ux uy uz w x y z pitch0 speed0
+
+scraped.diag_type = BoundaryScraping
+scraped.format = openpmd
+scraped.intervals = 1000
+
+warpx.reduced_diags_names = confined energy
+
+confined.type = ParticleNumber
+confined.intervals = 20
+
+energy.type = ParticleEnergy
+energy.intervals = 20

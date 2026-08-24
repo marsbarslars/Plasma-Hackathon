@@ -33,7 +33,30 @@ def parse_args():
     p.add_argument("--path", default=DIAG_PATH)
     p.add_argument("--n-tracks", type=int, default=N_TRACKS)
     p.add_argument("--stride", type=int, default=STRIDE)
+    p.add_argument("--species", default=None,
+                   help="species name (default: the only one in the series)")
+    p.add_argument("--png", metavar="PATH",
+                   help="render a single still of the final frame")
+    p.add_argument("--trail", type=int, default=TRAIL,
+                   help="trail length in frames; 0 for full history")
+    p.add_argument("--zoom", type=float, default=1.0,
+                   help=">1 moves the camera closer")
+    p.add_argument("--opacity", type=float, default=0.18,
+                   help="isosurface opacity")
     return p.parse_args()
+
+
+def resolve_species(ts, requested):
+    """Species names differ between runs (protons, ions, ...); pick sensibly."""
+    available = list(ts.avail_species or [])
+    if requested:
+        if requested not in available:
+            raise SystemExit(
+                f"species {requested!r} not in {available}")
+        return requested
+    if len(available) == 1:
+        return available[0]
+    raise SystemExit(f"--species required; found {available}")
 
 
 # ------------------------------------------------------------------ B field
@@ -64,9 +87,9 @@ def load_field(ts, iteration):
 
 # --------------------------------------------------------------- trajectories
 
-def load_tracks(ts, iterations, n_tracks):
+def load_tracks(ts, iterations, n_tracks, species):
     """(n_frames, n_tracks, 3) array of positions; NaN where absorbed."""
-    ids0 = ts.get_particle(["id"], species="protons", iteration=iterations[0])[0]
+    ids0 = ts.get_particle(["id"], species=species, iteration=iterations[0])[0]
     keep = np.sort(ids0)[:n_tracks]          # stable subset across frames
     order = np.argsort(keep)
     sorted_keep = keep[order]
@@ -75,7 +98,7 @@ def load_tracks(ts, iterations, n_tracks):
 
     for k, it in enumerate(iterations):
         x, y, z, ids = ts.get_particle(
-            ["x", "y", "z", "id"], species="protons", iteration=it
+            ["x", "y", "z", "id"], species=species, iteration=it
         )
         pos = np.searchsorted(sorted_keep, ids)
         pos_c = np.clip(pos, 0, len(sorted_keep) - 1)
@@ -106,13 +129,13 @@ def head_mesh(tracks, frame):
 
 # ------------------------------------------------------------------- camera
 
-def side_on_camera(plotter, bounds):
+def side_on_camera(plotter, bounds, zoom=1.0):
     """Look down -y so the mirror axis (z) runs horizontally across the view."""
     xmin, xmax, ymin, ymax, zmin, zmax = bounds
     cx, cy, cz = (xmin + xmax) / 2, (ymin + ymax) / 2, (zmin + zmax) / 2
     span = max(xmax - xmin, zmax - zmin)
     plotter.camera_position = [
-        (cx, cy - 2.2 * span, cz),   # eye
+        (cx, cy - 2.2 * span / zoom, cz),   # eye
         (cx, cy, cz),                # focal point
         (1.0, 0.0, 0.0),             # view up = +x  ->  z is horizontal
     ]
@@ -131,33 +154,36 @@ def main():
             "Re-run WarpX with diag1.intervals = 1."
         )
 
-    print(f"{len(iterations)} frames, {args.n_tracks} tracks")
+    species = resolve_species(ts, args.species)
+    print(f"{len(iterations)} frames, {args.n_tracks} tracks, species {species!r}")
     grid = load_field(ts, iterations[0])
-    tracks = load_tracks(ts, iterations, args.n_tracks)
+    tracks = load_tracks(ts, iterations, args.n_tracks, species)
 
-    off_screen = bool(args.gif or args.mp4)
+    off_screen = bool(args.gif or args.mp4 or args.png)
     p = pv.Plotter(off_screen=off_screen, window_size=(1400, 700))
     p.set_background("black")
 
     p.add_mesh(
         grid.contour(isosurfaces=ISOSURFACES, scalars="Bmag"),
-        scalars="Bmag", cmap="cividis", opacity=0.18,
+        scalars="Bmag", cmap="cividis", opacity=args.opacity,
         show_scalar_bar=False, name="field",
     )
     p.add_mesh(pv.Box(grid.bounds), style="wireframe",
                color="gray", opacity=0.3, name="box")
 
-    side_on_camera(p, grid.bounds)
+    side_on_camera(p, grid.bounds, args.zoom)
 
     if args.gif:
         p.open_gif(args.gif, fps=25)
     elif args.mp4:
         p.open_movie(args.mp4, framerate=30)
+    elif args.png:
+        pass
     else:
         p.show(interactive_update=True, auto_close=False)
 
     for frame in range(len(tracks)):
-        trails = trail_mesh(tracks, frame, TRAIL)
+        trails = trail_mesh(tracks, frame, args.trail or None)
         if trails is not None:
             p.add_mesh(trails, color="orange", line_width=1.5,
                        opacity=0.8, name="trails")
@@ -170,12 +196,18 @@ def main():
         p.add_text(f"step {iterations[frame]}", position="upper_left",
                    font_size=10, color="white", name="label")
 
-        if off_screen:
+        if args.png:
+            pass                      # only the final frame is kept
+        elif off_screen:
             p.write_frame()
         else:
             p.update()
 
-    if off_screen:
+    if args.png:
+        p.screenshot(args.png)
+        p.close()
+        print(f"wrote {args.png}")
+    elif off_screen:
         p.close()
         print(f"wrote {args.gif or args.mp4}")
     else:

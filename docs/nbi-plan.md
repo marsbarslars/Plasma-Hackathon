@@ -55,26 +55,37 @@ Full W7-X torus in a Cartesian box (12.4 × 12.4 × 2.4 m):
 period comfortably. 1 cm is only worth it if vessel features demand it, and it is
 where MPI stops being optional.
 
-The linear hybrid is far cheaper: a straight machine in a tight box, no wrapped
-torus, likely under 5e6 cells.
+The racetrack hybrid is cheaper than W7-X only in proportion to its footprint —
+being a closed loop, it still needs the whole device in the box, not one cell.
 
 ## 3. Geometry: two different problems
 
-### Hybrid — analytic implicit function
+### Hybrid — a racetrack, not a linear machine
 
-A linear mirror–stellarator needs no mesh. `warpx.eb_implicit_function` takes a
-parser expression, and a rotating-ellipse vessel is a clean closed form. With
-`k = 2*pi/L_period`, and remembering **WarpX puts the plasma where the function is
-negative**:
+The hybrid is a **racetrack**: two magnetic mirrors joined by short stellarator
+sections that close the device into a loop. That closed topology changes the
+problem in three ways:
+
+- There are no open ends, so loss-cone particles are not simply lost — they pass
+  into the stellarator links, and what happens there is the actual question.
+- The stellarator sections supply rotational transform between the mirror cells,
+  so confinement is not the single-cell mirror criterion of §Phase 0.
+- The vessel cannot be written as one implicit function along a single axis.
+
+A rotating-ellipse expression still describes a *straight* mirror cell, and is
+worth building first as a component — `warpx.eb_implicit_function` takes a parser
+expression, and **WarpX puts the plasma where the function is negative**:
 
 ```
 warpx.eb_implicit_function = "((x*cos(k*z) + y*sin(k*z))/a)^2
                             + ((-x*sin(k*z) + y*cos(k*z))/b)^2 - 1"
 ```
 
-Mirror end-plugs come from modulating `a` and `b` with `z`. This is a real
-stellarator-like boundary, costs nothing, and needs no new tooling — it should be
-the first complex geometry built.
+But the full racetrack needs either a piecewise construction (straight mirror
+cells joined by curved stellarator links, combined with min/max operations in the
+parser) or an STL mesh. Assume STL until a piecewise analytic form is shown to
+work — which makes the hybrid and W7-X share the same geometry pipeline rather
+than being cheap and expensive cases.
 
 ### W7-X — STL
 
@@ -173,14 +184,21 @@ later phase and runs into the timestep wall from §1.
 Each phase ends in something checkable. Do not start a phase before its predecessor
 gives the expected answer.
 
-**Phase 0 — validation.** Existing FEMM mirror, field rescaled to ~0.5 T, `dt`
-corrected, monoenergetic deuterons, pitch-angle sweep on axis. **Exit test:** loss
-boundary at 39.2° for R = 2.5. Cheap, analytically predictable, and it catches
-wrong field scaling or too-large `dt` before geometry is in play.
+**Phase 0 — validation. DONE.** See `runs/mirror-validation/`. FEMM mirror scaled
+×100 (0.149 T midplane, 0.461 T throats), `dt = 4 ns`, 20 000 isotropic 30 keV
+deuterons. On-axis mirror ratio is **3.086**, so the loss cone is at **34.7°** —
+not the 39.2° first estimated from a coarsely sampled field. The per-particle
+criterion `sin²θ < B_birth/B_max` predicts the simulated fate of **97.1%** of
+particles; confined fraction 0.795 against 0.822 predicted for isotropic on-axis
+birth. The residual is real physics: 233 particles leave radially with a median
+birth pitch of 76°, i.e. well confined against the mirror but lost to a 24 cm
+gyroradius in a 1 m bore.
 
-**Phase 1 — analytic hybrid vessel.** Rotating-ellipse EB, `boundary.particle_eb =
-Absorbing`, scraping diagnostic. **Exit test:** loss fraction changes sensibly with
-vessel radius; particles absorbed at the wall, not lost through domain edges.
+**Phase 1 — vessel boundary.** Start with a single straight mirror cell using the
+rotating-ellipse EB, `boundary.particle_eb = Absorbing`, scraping diagnostic.
+**Exit test:** loss fraction changes sensibly with vessel radius; particles are
+absorbed at the wall rather than at domain edges. Then extend to the racetrack,
+which is where the geometry question actually gets decided.
 
 **Phase 2 — beam injection and angle scan.** `gaussian_beam` with
 `do_gaussian_beam_rotation` and `do_gaussian_beam_rotation_momenta`. Angle as a

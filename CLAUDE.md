@@ -17,7 +17,10 @@ vendor/warpx/build/      standalone CMake/Ninja build → bin/warpx.3d
 scripts/warpx.py         the helper; stdlib-only Python, runs before .venv exists
 scripts/warpx            POSIX wrapper
 scripts/warpx.cmd        Windows wrapper
-scripts/animate_mirror.py
+scripts/animate_mirror.py    3D orbit render (PyVista)
+scripts/plot_mirror.py       mirror physics figure (matplotlib)
+scripts/plasma/              shared analysis: field maps, particles, velocity space
+docs/nbi-plan.md             NBI implementation plan
 runs/<name>/             one directory per simulation, run from inside it
 ```
 
@@ -172,6 +175,30 @@ isosurfaces really are the mirror field.
 Known dead line in the deck: `diag1.proton.variables` — the species is `protons`, so
 the key is ignored and defaults are written instead. Harmless (the defaults cover
 everything the animation reads) but it is not doing what it looks like.
+
+## runs/mirror-validation
+
+Phase 0 of `docs/nbi-plan.md`, and the case to copy for new work — `magnetic-mirror`
+is kept only for history. Isotropic 30 keV deuterons in the same FEMM field scaled
+×100 (0.149 T midplane, 0.461 T throats). On-axis mirror ratio 3.086, loss cone
+34.7°; the per-particle criterion `sin²θ < B_birth/B_max` predicts 97.1% of fates.
+See that directory's README for results and reproduction.
+
+Four things bitten by, all of which look like physics errors:
+
+- **Mesh arrays are written `(z,y,x)`.** Indexing as `(x,y,z)` made the mirror ratio
+  read 1.28 instead of 3.09. `scripts/plasma/field.py` normalises on load; use it
+  rather than reading openPMD meshes by hand.
+- **Custom particle attributes need `addRealAttributes` first**, or the diagnostic
+  aborts. Their parser reports `ux,uy,uz` as γv in m/s, not the documented γβ.
+- **Reduced diagnostics go to `diags/reducedfiles/`**, and a second run in the same
+  directory overwrites them unless `reduced_diags.path` is set.
+- **Diagnostic interval has to resolve the gyro-orbit for 3D rendering.** At 4 ns
+  steps the throat gyroperiod is ~71 steps, so a 200-step interval aliases orbits
+  into zigzags. Render from a short, finely sampled run instead.
+
+Parameter sweeps need no templating: WarpX takes ParmParse overrides on the command
+line, e.g. `warpx run inputs max_step=2400 ions.npart=400`.
 
 ## Caveats
 
