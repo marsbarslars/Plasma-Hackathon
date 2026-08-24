@@ -6,3 +6,4 @@ runs/*/warpx_used_inputs
 __pycache__/
 *.py[cod]
 .DS_Store
+runs/*/*.log

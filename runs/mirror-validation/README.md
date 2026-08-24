@@ -49,17 +49,21 @@ resolve a ~71-step gyro-orbit, so orbits alias into zigzags. Use a short, finely
 sampled run instead:
 
 ```bash
-../../scripts/warpx run inputs_3d_mirror_validation.txt max_step=2400 ions.npart=400 diag1.intervals=4 diag1.file_prefix=diags/orbits diagnostics.diags_names=diag1 reduced_diags.path=./diags/orbits_reduced/
+../../scripts/warpx run inputs_3d_mirror_validation.txt max_step=2400 diag1.intervals=8 diag1.file_prefix=diags/orbits diagnostics.diags_names=diag1 reduced_diags.path=./diags/orbits_reduced/
 ```
 
 ```bash
 ../../.venv/bin/python ../../scripts/animate_mirror.py --path diags/orbits --mp4 system.mp4 --n-tracks 30 --stride 2 --trail 120
 ```
 
-`system.mp4` pairs the 3D view with two live charts — the `|B|` the particles are
-currently sampling, and the (v∥, v⊥) distribution emptying its loss cone. The
-velocity panel reads every particle each frame, so it is the slow part of the
-render; `--no-charts` skips it.
+`system.mp4` pairs the 3D view with a static `|B|` scale bar and the live (v∥, v⊥)
+distribution emptying its loss cone. Keep the full 20 000 particles for that panel
+even though only 30 tracks are drawn — at 400 the histogram is too sparse to read.
+It reads every particle each frame, so it is the slow part of the render;
+`--no-charts` skips it.
+
+That run writes ~1.5 GB, nearly all of it the grid `B` field repeated per frame
+rather than the particles.
 
 Note `reduced_diags.path` — without it the second run overwrites the first run's
 `diags/reducedfiles/confined.txt`, which panel E reads.

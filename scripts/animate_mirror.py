@@ -248,7 +248,7 @@ def main():
     # 768 is divisible by 16, which keeps ffmpeg from silently resizing.
     win = (1200, 768) if charts else (1400, 700)
     p = pv.Plotter(off_screen=off_screen, window_size=win)
-    p.set_background("black")
+    p.set_background("#07090F")   # matches plasma.charts.GROUND
 
     if args.isosurfaces:
         p.add_mesh(

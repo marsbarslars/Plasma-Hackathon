@@ -151,10 +151,15 @@ each one runs the length of the machine and the throat convergence is visible;
 offscreen; no flag opens an interactive window. It draws 60 tracks by default
 (`--n-tracks`) — all of them is unreadable.
 
-Offscreen renders also composite a live chart panel on the right: a `|B|` scale bar
-with a marker for the field the surviving particles are currently sampling, and the
-evolving (v∥, v⊥) distribution with the loss cone drawn on. `--no-charts` gives the
-bare 3D view. Charted frames are composited in numpy and written with `imageio`
+Offscreen renders also composite a chart panel on the right: a **static** `|B|` scale
+bar — the legend for the field-line colouring — and the evolving (v∥, v⊥)
+distribution over **every** particle in the frame, with the loss cone drawn on.
+`--no-charts` gives the bare 3D view.
+
+Colour does two jobs, so it uses two maps rather than overloading one: field strength
+stays on cividis (matching the lines the bar labels), particle density uses an
+inferno ramp whose first entry is replaced by the panel background so empty velocity
+space reads as empty, and the loss cone is a cyan absent from both. Charted frames are composited in numpy and written with `imageio`
 rather than PyVista's own movie writer, since the panel is matplotlib; the render
 window is sized to a multiple of 16 so ffmpeg does not silently resize.
 
