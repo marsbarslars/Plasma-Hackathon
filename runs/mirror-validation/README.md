@@ -53,8 +53,13 @@ sampled run instead:
 ```
 
 ```bash
-../../.venv/bin/python ../../scripts/animate_mirror.py --path diags/orbits --mp4 system.mp4 --n-tracks 30 --stride 2 --trail 120 --zoom 1.9 --opacity 0.32
+../../.venv/bin/python ../../scripts/animate_mirror.py --path diags/orbits --mp4 system.mp4 --n-tracks 30 --stride 2 --trail 120
 ```
+
+`system.mp4` pairs the 3D view with two live charts — the `|B|` the particles are
+currently sampling, and the (v∥, v⊥) distribution emptying its loss cone. The
+velocity panel reads every particle each frame, so it is the slow part of the
+render; `--no-charts` skips it.
 
 Note `reduced_diags.path` — without it the second run overwrites the first run's
 `diags/reducedfiles/confined.txt`, which panel E reads.

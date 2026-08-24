@@ -112,8 +112,10 @@ Then render the result:
 
 Omit `--mp4` for an interactive PyVista window, or pass `--gif`/`--png` instead. The
 animation shows magnetic field lines with particle trails, viewed side-on so the
-mirror axis runs horizontally. Pass `--isosurfaces` for `|B|` contours instead of
-field lines.
+mirror axis runs horizontally, alongside live charts: a `|B|` scale bar tracking the
+field the particles are sampling, and the (v∥, v⊥) distribution with the loss cone
+marked. Pass `--isosurfaces` for `|B|` contours instead of field lines, or
+`--no-charts` for the bare 3D view.
 
 Diagnostic output is gitignored — 501 openPMD files per run is more than is worth
 tracking. The input deck and the FEMM field file are committed, so runs reproduce.

@@ -150,6 +150,17 @@ each one runs the length of the machine and the throat convergence is visible;
 `--isosurfaces` switches back to `|B|` contours. `--gif`/`--mp4`/`--png` render
 offscreen; no flag opens an interactive window. It draws 60 tracks by default
 (`--n-tracks`) — all of them is unreadable.
+
+Offscreen renders also composite a live chart panel on the right: a `|B|` scale bar
+with a marker for the field the surviving particles are currently sampling, and the
+evolving (v∥, v⊥) distribution with the loss cone drawn on. `--no-charts` gives the
+bare 3D view. Charted frames are composited in numpy and written with `imageio`
+rather than PyVista's own movie writer, since the panel is matplotlib; the render
+window is sized to a multiple of 16 so ffmpeg does not silently resize.
+
+The camera uses **parallel projection**. Under perspective, a long thin machine
+draws the near and far faces of the bounding box at noticeably different sizes,
+which reads as field lines escaping the domain when they are merely nearer.
 Tracks are matched by particle `id` and NaN-filled once a particle is absorbed, so
 boundary losses do not corrupt the trails.
 

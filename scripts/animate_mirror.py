@@ -15,10 +15,16 @@ The mirror axis (z) is rendered horizontally.
 """
 
 import argparse
+import os
+import sys
 
 import numpy as np
 import pyvista as pv
 from openpmd_viewer import OpenPMDTimeSeries
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from plasma import load_field_map, load_particles          # noqa: E402
+from plasma.charts import ChartPanel, stack_side_by_side   # noqa: E402
 
 # ---------------------------------------------------------------- parameters
 
@@ -43,7 +49,7 @@ def parse_args():
     p.add_argument("--trail", type=int, default=TRAIL,
                    help="trail length in frames; 0 for full history")
     p.add_argument("--zoom", type=float, default=1.0,
-                   help=">1 moves the camera closer")
+                   help=">1 tightens the framing around the domain")
     p.add_argument("--opacity", type=float, default=0.55,
                    help="opacity of the field rendering")
     p.add_argument("--isosurfaces", action="store_true",
@@ -51,6 +57,9 @@ def parse_args():
     p.add_argument("--n-lines", type=int, default=48,
                    help="approximate number of field lines")
     p.add_argument("--line-width", type=float, default=1.6)
+    p.add_argument("--no-charts", action="store_true",
+                   help="render only the 3D view, without the live panel")
+    p.add_argument("--chart-width", type=int, default=560)
     return p.parse_args()
 
 
@@ -175,16 +184,45 @@ def head_mesh(tracks, frame):
 
 # ------------------------------------------------------------------- camera
 
-def side_on_camera(plotter, bounds, zoom=1.0):
-    """Look down -y so the mirror axis (z) runs horizontally across the view."""
+def side_on_camera(plotter, bounds, zoom=1.0, window=(1400, 700)):
+    """Look down -y so the mirror axis (z) runs horizontally across the view.
+
+    Parallel projection, sized to the domain: a perspective view of a long thin
+    machine draws the near and far faces of the bounding box at visibly
+    different sizes, which reads as field lines escaping the domain when they
+    are simply closer to the camera.
+    """
     xmin, xmax, ymin, ymax, zmin, zmax = bounds
     cx, cy, cz = (xmin + xmax) / 2, (ymin + ymax) / 2, (zmin + zmax) / 2
     span = max(xmax - xmin, zmax - zmin)
     plotter.camera_position = [
-        (cx, cy - 2.2 * span / zoom, cz),   # eye
+        (cx, cy - 2.5 * span, cz),   # eye
         (cx, cy, cz),                # focal point
         (1.0, 0.0, 0.0),             # view up = +x  ->  z is horizontal
     ]
+    plotter.enable_parallel_projection()
+
+    # Vertical on screen is x, horizontal is z. Fit whichever needs more room.
+    aspect = window[0] / window[1]
+    half = max((xmax - xmin) / 2, (zmax - zmin) / 2 / aspect)
+    plotter.camera.parallel_scale = half * 1.06 / zoom
+
+
+# ---------------------------------------------------------------- compositing
+
+def composite(plotter, panel, fmap, path, species, iteration, ts, n_total):
+    """One finished frame: 3D render on the left, live charts on the right."""
+    scene = plotter.screenshot(return_img=True)
+
+    part = load_particles(path, iteration, species, ts=ts)
+    if len(part):
+        b = fmap.interpolate(part.x, part.y, part.z)
+        vpar, vperp = part.v_par_perp(b)
+        bmag = np.linalg.norm(b, axis=1)
+    else:
+        vpar = vperp = bmag = np.array([])
+
+    return stack_side_by_side(scene, panel.render(bmag, vpar, vperp, n_total))
 
 
 # --------------------------------------------------------------------- main
@@ -206,7 +244,10 @@ def main():
     tracks = load_tracks(ts, iterations, args.n_tracks, species)
 
     off_screen = bool(args.gif or args.mp4 or args.png)
-    p = pv.Plotter(off_screen=off_screen, window_size=(1400, 700))
+    charts = not args.no_charts and off_screen
+    # 768 is divisible by 16, which keeps ffmpeg from silently resizing.
+    win = (1200, 768) if charts else (1400, 700)
+    p = pv.Plotter(off_screen=off_screen, window_size=win)
     p.set_background("black")
 
     if args.isosurfaces:
@@ -232,9 +273,32 @@ def main():
     p.add_mesh(pv.Box(grid.bounds), style="wireframe",
                color="gray", opacity=0.3, name="box")
 
-    side_on_camera(p, grid.bounds, args.zoom)
+    side_on_camera(p, grid.bounds, args.zoom, win)
 
-    if args.gif:
+    panel = None
+    if charts:
+        fmap = load_field_map(args.path, iterations[0])
+        b_lo, b_hi, _ = fmap.mirror_ratio()
+        p0 = load_particles(args.path, iterations[0], species, ts=ts)
+        v_scale = float(np.percentile(p0.speed, 99.5) / 1e6)
+        panel = ChartPanel(args.chart_width, win[1], (b_lo, b_hi), v_scale,
+                           fmap.loss_cone_deg())
+        n_total = len(p0)
+        print(f"charts: |B| {b_lo:.3f}-{b_hi:.3f} T, loss cone "
+              f"{fmap.loss_cone_deg():.1f} deg, {n_total} particles")
+
+    writer = None
+    if charts and (args.gif or args.mp4):
+        import imageio.v2 as imageio
+        if args.gif:
+            writer = imageio.get_writer(args.gif, fps=25)
+        else:
+            writer = imageio.get_writer(args.mp4, fps=30,
+                                        macro_block_size=None)
+
+    if charts:
+        pass                          # frames are composited and written below
+    elif args.gif:
         p.open_gif(args.gif, fps=25)
     elif args.mp4:
         p.open_movie(args.mp4, framerate=30)
@@ -257,14 +321,30 @@ def main():
         p.add_text(f"step {iterations[frame]}", position="upper_left",
                    font_size=10, color="white", name="label")
 
-        if args.png:
+        if charts:
+            frame_img = composite(p, panel, fmap, args.path, species,
+                                  iterations[frame], ts, n_total)
+            if writer is not None:
+                writer.append_data(frame_img)
+            last_frame = frame_img
+        elif args.png:
             pass                      # only the final frame is kept
         elif off_screen:
             p.write_frame()
         else:
             p.update()
 
-    if args.png:
+    if charts:
+        if writer is not None:
+            writer.close()
+            print(f"wrote {args.gif or args.mp4}")
+        if args.png:
+            import imageio.v2 as imageio
+            imageio.imwrite(args.png, last_frame)
+            print(f"wrote {args.png}")
+        panel.close()
+        p.close()
+    elif args.png:
         p.screenshot(args.png)
         p.close()
         print(f"wrote {args.png}")

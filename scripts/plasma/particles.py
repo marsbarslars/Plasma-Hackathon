@@ -77,11 +77,17 @@ def _velocity_from_momentum(series, species, iteration, mass):
 
 
 def load_particles(series_path: str, iteration: int, species: str = "ions",
-                   extra_records=()) -> Particles:
-    """Load one iteration of a Full diagnostic."""
+                   extra_records=(), ts=None) -> Particles:
+    """Load one iteration of a Full diagnostic.
+
+    Pass an existing ``ts`` when looping over many iterations — constructing an
+    OpenPMDTimeSeries rescans the directory, which dominates the cost of a
+    per-frame read.
+    """
     from openpmd_viewer import OpenPMDTimeSeries
 
-    ts = OpenPMDTimeSeries(series_path)
+    if ts is None:
+        ts = OpenPMDTimeSeries(series_path)
     x, y, z, ids = ts.get_particle(["x", "y", "z", "id"],
                                    species=species, iteration=iteration)
     mass = ts.get_particle(["mass"], species=species, iteration=iteration)[0][0]
